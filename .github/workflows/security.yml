@@ -24,14 +24,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Fetch every public branch, tag, and pull-request head
         run: |
+          set -euo pipefail
           git fetch --force --prune origin \
             '+refs/heads/*:refs/remotes/origin/*' \
             '+refs/tags/*:refs/tags/*' \
             '+refs/pull/*/head:refs/remotes/pull/*'
+          git config --local --unset-all http.https://github.com/.extraheader
+          if git config --local --get-regexp '^http\..*\.extraheader$' >/dev/null
+          then
+            echo "checkout credential cleanup failed" >&2
+            exit 1
+          fi
 
       - name: Audit the checked-out public tree
         run: python3 scripts/audit_public_boundary.py --repository .
@@ -57,14 +64,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Fetch every public branch, tag, and pull-request head
         run: |
+          set -euo pipefail
           git fetch --force --prune origin \
             '+refs/heads/*:refs/remotes/origin/*' \
             '+refs/tags/*:refs/tags/*' \
             '+refs/pull/*/head:refs/remotes/pull/*'
+          git config --local --unset-all http.https://github.com/.extraheader
+          if git config --local --get-regexp '^http\..*\.extraheader$' >/dev/null
+          then
+            echo "checkout credential cleanup failed" >&2
+            exit 1
+          fi
 
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
@@ -78,14 +92,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Fetch every public branch, tag, and pull-request head
         run: |
+          set -euo pipefail
           git fetch --force --prune origin \
             '+refs/heads/*:refs/remotes/origin/*' \
             '+refs/tags/*:refs/tags/*' \
             '+refs/pull/*/head:refs/remotes/pull/*'
+          git config --local --unset-all http.https://github.com/.extraheader
+          if git config --local --get-regexp '^http\..*\.extraheader$' >/dev/null
+          then
+            echo "checkout credential cleanup failed" >&2
+            exit 1
+          fi
 
       - name: Set up Python and uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
