@@ -29,10 +29,32 @@ updates:
       - dependencies
       - frontend
     groups:
+      vite-toolchain:
+        applies-to: version-updates
+        patterns:
+          - vite
+          - "@vitejs/plugin-react"
+          - vitest
+          - "@vitest/*"
       frontend-non-breaking:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - vite
+          - "@vitejs/plugin-react"
+          - vitest
+          - "@vitest/*"
         update-types:
           - patch
           - minor
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: jsdom
+        update-types:
+          - version-update:semver-major
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions
