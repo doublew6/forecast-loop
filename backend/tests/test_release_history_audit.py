@@ -108,6 +108,7 @@ def test_noreply_and_example_emails_are_not_reported_as_pii(
         (
             "123+contributor@users.noreply.github.com\n"
             "noreply@github.com\n"
+            "support@github.com\n"
             "reader@example.org\n"
         ),
     )

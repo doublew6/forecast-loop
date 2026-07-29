@@ -92,7 +92,12 @@ ALLOWED_EMAIL_SUFFIXES: Final = (
     b"@example.org",
     b"@localhost",
 )
-ALLOWED_EMAIL_ADDRESSES: Final = frozenset({b"noreply@github.com"})
+ALLOWED_EMAIL_ADDRESSES: Final = frozenset(
+    {
+        b"noreply@github.com",
+        b"support@github.com",
+    }
+)
 ALLOWED_HOME_COMPONENTS: Final = frozenset(
     {
         b"<operator>",
