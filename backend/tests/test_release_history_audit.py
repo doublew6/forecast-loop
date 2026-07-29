@@ -105,7 +105,11 @@ def test_noreply_and_example_emails_are_not_reported_as_pii(
     repository = _repository(tmp_path)
     _write(
         repository / "contacts.txt",
-        "123+contributor@users.noreply.github.com\nreader@example.org\n",
+        (
+            "123+contributor@users.noreply.github.com\n"
+            "noreply@github.com\n"
+            "reader@example.org\n"
+        ),
     )
     _git(repository, "add", "contacts.txt")
     _git(repository, "commit", "-m", "document public contacts")

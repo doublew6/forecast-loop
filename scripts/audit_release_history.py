@@ -92,6 +92,7 @@ ALLOWED_EMAIL_SUFFIXES: Final = (
     b"@example.org",
     b"@localhost",
 )
+ALLOWED_EMAIL_ADDRESSES: Final = frozenset({b"noreply@github.com"})
 ALLOWED_HOME_COMPONENTS: Final = frozenset(
     {
         b"<operator>",
@@ -372,7 +373,8 @@ def _matches(rule: Rule, body: bytes) -> bool:
     if rule.name != "email_address":
         return bool(rule.pattern.search(body))
     return any(
-        not match.group(0).lower().endswith(ALLOWED_EMAIL_SUFFIXES)
+        (address := match.group(0).lower()) not in ALLOWED_EMAIL_ADDRESSES
+        and not address.endswith(ALLOWED_EMAIL_SUFFIXES)
         for match in rule.pattern.finditer(body)
     )
 
