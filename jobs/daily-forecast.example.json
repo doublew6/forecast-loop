@@ -1,0 +1,35 @@
+{
+  "schema": "vericouncil.job/v1",
+  "name": "daily-forecast",
+  "schedule": "15 9,15 * * 1-5",
+  "timezone": "Asia/Shanghai",
+  "profile": "formal",
+  "prepare": {
+    "command": [
+      "forecast-loop",
+      "forecast",
+      "prepare",
+      "--mode",
+      "live"
+    ]
+  },
+  "draft": {
+    "runner": "codex",
+    "model": "replace-with-supported-model",
+    "reasoning_effort": "high",
+    "prompt": "prompts/daily-forecast-v2.md",
+    "writable": [
+      "data/handoffs/*/drafts.json"
+    ]
+  },
+  "finalize": {
+    "command": [
+      "forecast-loop",
+      "forecast",
+      "finalize",
+      "--mode",
+      "live",
+      "{job_dir}"
+    ]
+  }
+}

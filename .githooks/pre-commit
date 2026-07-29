@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+repository="$(git rev-parse --show-toplevel)"
+cd "${repository}"
+
+python_bin="python3"
+if [ -x ".venv/bin/python" ]; then
+  python_bin=".venv/bin/python"
+fi
+
+required=""
+required="$(git config --local --get forecastloop.privateBoundaryRequired || true)"
+if [ "${required}" = "true" ]; then
+  exec "${python_bin}" scripts/audit_public_boundary.py \
+    --repository . \
+    --staged \
+    --require-private-patterns
+fi
+
+exec "${python_bin}" scripts/audit_public_boundary.py \
+  --repository . \
+  --staged

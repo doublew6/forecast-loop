@@ -1,0 +1,37 @@
+{
+  "schema_version": "forecast-loop.market-universe/v1",
+  "universe_id": "single-stock-aapl",
+  "version": "1.0.0",
+  "market": "US",
+  "timezone": "America/New_York",
+  "calendar_id": "XNAS",
+  "session_close": "16:00",
+  "horizons": ["D1", "D2"],
+  "instruments": [
+    {
+      "code": "AAPL.US",
+      "name": "Apple",
+      "asset_type": "equity",
+      "exchange": "XNAS",
+      "currency": "USD",
+      "sector": "Information Technology",
+      "strategy_bucket": "growth",
+      "tags": ["single-stock", "technology", "hardware"],
+      "wiki_entry_ids": {
+        "macro_policy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "market_news_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "ai_storage_industry_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "strategy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "risk_critic_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH"
+      },
+      "agent_briefs": {
+        "macro_policy_agent": "分析利率、美元、消费周期和贸易政策对公司估值与盈利预期的短周期传导。",
+        "market_news_agent": "只分析冻结的公司公告、产品与供应链事件、分析师预期变化及是否已定价。",
+        "ai_storage_industry_agent": "分析公司基本面、产品周期、供应链、竞争、估值和个股催化。",
+        "strategy_agent": "把单标的 universe 视为绝对方向研究，不虚构不存在的跨标的排序优势。",
+        "risk_critic_agent": "检查财报窗口、公司事件、集中度、供应链、流动性和跳空风险。"
+      }
+    }
+  ],
+  "content_hash": "fbc58a65f8c92ce1b7e2d2a9232d40002f4c5b97791f83d8748f7f87be7050d0"
+}

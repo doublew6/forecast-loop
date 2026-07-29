@@ -1,0 +1,24 @@
+{
+  "schema_version": "forecast-loop.benchmark-manifest/v1",
+  "benchmark_id": "cross-source-regression",
+  "fixture_version": "1.0.0",
+  "redistribution_license": "CC0-1.0",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "size": 342,
+      "sha256": "b9bcfcb392bcaef81989b609e9d9e8a5618f59a5634cd280139a37bd373bdccc"
+    },
+    {
+      "path": "agent-specs.json",
+      "size": 4304,
+      "sha256": "0e496527f9cf13b13635dd17e4a90fe132dbf135a6b497114728bc7e21c478f4"
+    },
+    {
+      "path": "benchmark.json",
+      "size": 13821,
+      "sha256": "8ce635f68f981f459d233615c18e014b40fcdb93e0ab9c0b7ba41314680702de"
+    }
+  ],
+  "manifest_hash": "c65a537cc7fdefa19c9fd60df54c5888596966d5126726be22ebe170d6f81178"
+}

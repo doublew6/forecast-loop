@@ -1,0 +1,126 @@
+{
+  "schema_version": "forecast-loop.benchmark-agent-spec-archive/v1",
+  "benchmark_id": "cross-source-regression",
+  "fixture_version": "1.0.0",
+  "specs": [
+    {
+      "schema_version": "forecast-loop.agent-spec/v1",
+      "agent_id": "manual_fixture_agent",
+      "agent_version": "1.0.0",
+      "name": "Synthetic manual fixture Agent",
+      "role": "Submit a confidence-only directional benchmark judgment.",
+      "workflow_role": "shadow",
+      "source_type": "manual",
+      "capabilities": {
+        "direction": true,
+        "probability_mode": "confidence",
+        "reasoning_mode": "none",
+        "evidence_mode": "none",
+        "supports_blind_submission": true,
+        "supports_input_binding": true
+      },
+      "participation": {
+        "schema_version": "forecast-loop.participation-policy/v1",
+        "policy_id": "benchmark-manual-shadow",
+        "policy_version": "1.0.0",
+        "mode": "shadow",
+        "influence": "none",
+        "evaluation_metrics": [
+          "direction"
+        ]
+      },
+      "content_hash": "c2488f66136afe4ef654b8ca3ac8c6e7dd6a67059072371d6bdcae7a6494b8e9"
+    },
+    {
+      "schema_version": "forecast-loop.agent-spec/v1",
+      "agent_id": "ai_fixture_agent",
+      "agent_version": "1.0.0",
+      "name": "Synthetic AI fixture Agent",
+      "role": "Submit a frozen multiclass AI benchmark signal.",
+      "workflow_role": "shadow",
+      "source_type": "ai",
+      "capabilities": {
+        "direction": true,
+        "probability_mode": "multiclass",
+        "reasoning_mode": "none",
+        "evidence_mode": "none",
+        "supports_blind_submission": false,
+        "supports_input_binding": true
+      },
+      "participation": {
+        "schema_version": "forecast-loop.participation-policy/v1",
+        "policy_id": "benchmark-ai-shadow",
+        "policy_version": "1.0.0",
+        "mode": "shadow",
+        "influence": "none",
+        "evaluation_metrics": [
+          "direction",
+          "multiclass_brier",
+          "calibration"
+        ]
+      },
+      "content_hash": "f30039c190a23e1dcfaca55adc04f5068c31fb549b445ff27414c12e7fb72b1d"
+    },
+    {
+      "schema_version": "forecast-loop.agent-spec/v1",
+      "agent_id": "quant_fixture_agent",
+      "agent_version": "1.0.0",
+      "name": "Synthetic quant fixture Agent",
+      "role": "Submit a frozen multiclass quantitative benchmark signal.",
+      "workflow_role": "shadow",
+      "source_type": "quant",
+      "capabilities": {
+        "direction": true,
+        "probability_mode": "multiclass",
+        "reasoning_mode": "none",
+        "evidence_mode": "none",
+        "supports_blind_submission": false,
+        "supports_input_binding": true
+      },
+      "participation": {
+        "schema_version": "forecast-loop.participation-policy/v1",
+        "policy_id": "benchmark-quant-shadow",
+        "policy_version": "1.0.0",
+        "mode": "shadow",
+        "influence": "none",
+        "evaluation_metrics": [
+          "direction",
+          "multiclass_brier",
+          "calibration"
+        ]
+      },
+      "content_hash": "573ece3145295f267f0516bd31e3da4f88304ef87297d687de8e8be67af09c35"
+    },
+    {
+      "schema_version": "forecast-loop.agent-spec/v1",
+      "agent_id": "deterministic_fixture_agent",
+      "agent_version": "1.0.0",
+      "name": "Synthetic deterministic fixture Agent",
+      "role": "Submit a frozen multiclass deterministic benchmark signal.",
+      "workflow_role": "shadow",
+      "source_type": "deterministic",
+      "capabilities": {
+        "direction": true,
+        "probability_mode": "multiclass",
+        "reasoning_mode": "none",
+        "evidence_mode": "none",
+        "supports_blind_submission": false,
+        "supports_input_binding": true
+      },
+      "participation": {
+        "schema_version": "forecast-loop.participation-policy/v1",
+        "policy_id": "benchmark-deterministic-shadow",
+        "policy_version": "1.0.0",
+        "mode": "shadow",
+        "influence": "none",
+        "evaluation_metrics": [
+          "direction",
+          "multiclass_brier",
+          "calibration"
+        ]
+      },
+      "content_hash": "01b73bee880fed561cd848a49fae2ccb2758c7b71919c61a14e0006493f08bd5"
+    }
+  ],
+  "content_hash": "c3ee2486a459835ceaf7c793d375bee0b9305744c5528def91f2014a6da8a195"
+}

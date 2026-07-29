@@ -1,0 +1,85 @@
+{
+  "schema_version": "forecast-loop.market-universe/v1",
+  "universe_id": "us-index-and-equities",
+  "version": "1.0.0",
+  "market": "US",
+  "timezone": "America/New_York",
+  "calendar_id": "XNYS",
+  "session_close": "16:00",
+  "horizons": ["D1", "D2"],
+  "instruments": [
+    {
+      "code": "SPX.US",
+      "name": "S&P 500",
+      "asset_type": "index",
+      "exchange": "XNYS",
+      "currency": "USD",
+      "sector": null,
+      "strategy_bucket": "large_cap",
+      "tags": ["broad-market", "large-cap"],
+      "wiki_entry_ids": {
+        "macro_policy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "market_news_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "ai_storage_industry_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "strategy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "risk_critic_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH"
+      },
+      "agent_briefs": {
+        "macro_policy_agent": "分析美联储、财政、美元、利率和全球流动性对该标的 D1/D2 的传导。",
+        "market_news_agent": "只分析截止时间前冻结的美国市场事件、公告、宏观发布和预期差。",
+        "ai_storage_industry_agent": "作为行业暴露研究席位，分析指数盈利、估值与行业贡献，不局限于 AI 存储主题。",
+        "strategy_agent": "比较本 universe 内标的的市场状态、风格暴露和相对强弱。",
+        "risk_critic_agent": "检查美股交易日历、夏令时、共同来源、流动性和事件跳空风险。"
+      }
+    },
+    {
+      "code": "AAPL.US",
+      "name": "Apple",
+      "asset_type": "equity",
+      "exchange": "XNAS",
+      "currency": "USD",
+      "sector": "Information Technology",
+      "strategy_bucket": "growth",
+      "tags": ["single-stock", "technology", "hardware"],
+      "wiki_entry_ids": {
+        "macro_policy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "market_news_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "ai_storage_industry_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "strategy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "risk_critic_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH"
+      },
+      "agent_briefs": {
+        "macro_policy_agent": "分析利率、美元、消费周期和贸易政策对公司估值与盈利预期的短周期传导。",
+        "market_news_agent": "只分析冻结的公司公告、产品与供应链事件、分析师预期变化及是否已定价。",
+        "ai_storage_industry_agent": "分析公司基本面、产品周期、供应链、竞争、估值和个股催化。",
+        "strategy_agent": "结合个股特有风险与本 universe 相对强弱形成 D1/D2 概率判断。",
+        "risk_critic_agent": "检查财报窗口、公司事件、集中度、供应链、流动性和跳空风险。"
+      }
+    },
+    {
+      "code": "MSFT.US",
+      "name": "Microsoft",
+      "asset_type": "equity",
+      "exchange": "XNAS",
+      "currency": "USD",
+      "sector": "Information Technology",
+      "strategy_bucket": "growth",
+      "tags": ["single-stock", "technology", "cloud"],
+      "wiki_entry_ids": {
+        "macro_policy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "market_news_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "ai_storage_industry_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "strategy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "risk_critic_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH"
+      },
+      "agent_briefs": {
+        "macro_policy_agent": "分析利率、美元、企业 IT 支出与监管环境对公司短周期定价的传导。",
+        "market_news_agent": "只分析冻结的公司公告、云与 AI 业务事件、同业变化及预期差。",
+        "ai_storage_industry_agent": "分析云计算、AI 资本开支、盈利质量、竞争、估值和个股催化。",
+        "strategy_agent": "结合个股特有风险与本 universe 相对强弱形成 D1/D2 概率判断。",
+        "risk_critic_agent": "检查财报窗口、监管、资本开支、拥挤度、流动性和跳空风险。"
+      }
+    }
+  ],
+  "content_hash": "c86b83c2267eab2259f239448b9d67f2b01a371f2223f5f87a5a6b1ceca9601a"
+}

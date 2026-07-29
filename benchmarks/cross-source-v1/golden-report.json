@@ -1,0 +1,9 @@
+{
+  "schema_version": "forecast-loop.benchmark-golden/v1",
+  "benchmark_id": "cross-source-regression",
+  "fixture_version": "1.0.0",
+  "fixture_content_hash": "4d5f1a1c0718aaf805050e6d073f0065c6d676b434e948d724dced2206897a9c",
+  "fixture_manifest_hash": "c65a537cc7fdefa19c9fd60df54c5888596966d5126726be22ebe170d6f81178",
+  "expected_report_hash": "6a17c803b834574efdd03828dec16e33d2f049704af775ffdc6dd96f0888a817",
+  "golden_hash": "84691dc91f7bbb11e4fb377d1ca15711a2c0ead70c177146ceb17427dd0494cf"
+}

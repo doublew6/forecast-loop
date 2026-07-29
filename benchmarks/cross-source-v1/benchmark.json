@@ -1,0 +1,539 @@
+{
+  "schema_version": "forecast-loop.benchmark-fixture/v1",
+  "benchmark_id": "cross-source-regression",
+  "fixture_version": "1.0.0",
+  "title": "Synthetic cross-source forecast regression benchmark",
+  "redistribution_license": "CC0-1.0",
+  "synthetic_data": true,
+  "evaluation_policy": {
+    "schema_version": "forecast-loop.benchmark-policy/v1",
+    "direction_label_basis": "thresholded_three_class",
+    "sign_direction_eligibility": "nonzero_return",
+    "material_move_rule": "abs_return_strictly_greater_than_threshold",
+    "aggregate_method": "target_date_macro_average",
+    "brier_formula": "mean_squared_error_over_3",
+    "brier_range": [
+      0,
+      "2/3"
+    ],
+    "calibration_method": "three_class_classwise_ece",
+    "calibration_bin_edges": [
+      0.0,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
+      1.0
+    ]
+  },
+  "participants": [
+    {
+      "agent_id": "manual_fixture_agent",
+      "agent_version": "1.0.0",
+      "source_type": "manual",
+      "probability_mode": "confidence",
+      "evaluation_metrics": [
+        "direction"
+      ]
+    },
+    {
+      "agent_id": "ai_fixture_agent",
+      "agent_version": "1.0.0",
+      "source_type": "ai",
+      "probability_mode": "multiclass",
+      "evaluation_metrics": [
+        "direction",
+        "multiclass_brier",
+        "calibration"
+      ]
+    },
+    {
+      "agent_id": "quant_fixture_agent",
+      "agent_version": "1.0.0",
+      "source_type": "quant",
+      "probability_mode": "multiclass",
+      "evaluation_metrics": [
+        "direction",
+        "multiclass_brier",
+        "calibration"
+      ]
+    },
+    {
+      "agent_id": "deterministic_fixture_agent",
+      "agent_version": "1.0.0",
+      "source_type": "deterministic",
+      "probability_mode": "multiclass",
+      "evaluation_metrics": [
+        "direction",
+        "multiclass_brier",
+        "calibration"
+      ]
+    }
+  ],
+  "committees": [
+    {
+      "committee_id": "fixed_committee",
+      "kind": "fixed",
+      "member_weights": {
+        "ai_fixture_agent": 0.5,
+        "quant_fixture_agent": 0.3,
+        "deterministic_fixture_agent": 0.2
+      },
+      "minimum_members": 3,
+      "weight_origin": "frozen_policy",
+      "fitted_on_fixture_outcomes": false
+    },
+    {
+      "committee_id": "equal_weight_baseline",
+      "kind": "equal_weight_baseline",
+      "member_weights": {
+        "ai_fixture_agent": 0.3333333333333333,
+        "quant_fixture_agent": 0.3333333333333333,
+        "deterministic_fixture_agent": 0.3333333333333333
+      },
+      "minimum_members": 3,
+      "weight_origin": "equal_by_definition",
+      "fitted_on_fixture_outcomes": false
+    },
+    {
+      "committee_id": "candidate_believability_committee",
+      "kind": "candidate_believability",
+      "member_weights": {
+        "ai_fixture_agent": 0.25,
+        "quant_fixture_agent": 0.5,
+        "deterministic_fixture_agent": 0.25
+      },
+      "minimum_members": 3,
+      "weight_origin": "predeclared_out_of_sample",
+      "fitted_on_fixture_outcomes": false,
+      "weights_effective_at": "2026-01-01",
+      "weights_trained_through": "2025-12-31",
+      "weights_source_hash": "6379dbd6aee6d0bbee7e025b946d1e3b3eed8842c68ef09f41e89d59565bdfc2"
+    }
+  ],
+  "opportunities": [
+    {
+      "target_date": "2026-01-05",
+      "index_code": "SYNTH-A",
+      "horizon": "D1",
+      "actual_return": 0.02,
+      "neutral_threshold": 0.005,
+      "actual_label": "up",
+      "material_move": true,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "confidence": 0.72
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.7,
+            "neutral": 0.15,
+            "down": 0.15
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.55,
+            "neutral": 0.2,
+            "down": 0.25
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.6,
+            "neutral": 0.2,
+            "down": 0.2
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-05",
+      "index_code": "SYNTH-B",
+      "horizon": "D1",
+      "actual_return": -0.015,
+      "neutral_threshold": 0.005,
+      "actual_label": "down",
+      "material_move": true,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "confidence": 0.64
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.2,
+            "neutral": 0.15,
+            "down": 0.65
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.7,
+            "neutral": 0.1,
+            "down": 0.2
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.25,
+            "neutral": 0.2,
+            "down": 0.55
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-05",
+      "index_code": "SYNTH-C",
+      "horizon": "D1",
+      "actual_return": 0.003,
+      "neutral_threshold": 0.005,
+      "actual_label": "neutral",
+      "material_move": false,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "confidence": 0.55
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.4,
+            "neutral": 0.4,
+            "down": 0.2
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.25,
+            "neutral": 0.35,
+            "down": 0.4
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.36,
+            "neutral": 0.4,
+            "down": 0.24
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-06",
+      "index_code": "SYNTH-A",
+      "horizon": "D1",
+      "actual_return": -0.021,
+      "neutral_threshold": 0.005,
+      "actual_label": "down",
+      "material_move": true,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "failed",
+          "failure_code": "manual_deadline_missed"
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.2,
+            "neutral": 0.2,
+            "down": 0.6
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.15,
+            "neutral": 0.15,
+            "down": 0.7
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.45,
+            "neutral": 0.2,
+            "down": 0.35
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-07",
+      "index_code": "SYNTH-A",
+      "horizon": "D1",
+      "actual_return": 0.008,
+      "neutral_threshold": 0.005,
+      "actual_label": "up",
+      "material_move": true,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "confidence": 0.59
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.55,
+            "neutral": 0.25,
+            "down": 0.2
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.15,
+            "neutral": 0.15,
+            "down": 0.7
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.5,
+            "neutral": 0.3,
+            "down": 0.2
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-07",
+      "index_code": "SYNTH-B",
+      "horizon": "D1",
+      "actual_return": -0.002,
+      "neutral_threshold": 0.005,
+      "actual_label": "neutral",
+      "material_move": false,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "missing"
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.35,
+            "neutral": 0.45,
+            "down": 0.2
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.2,
+            "neutral": 0.5,
+            "down": 0.3
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.2,
+            "neutral": 0.5,
+            "down": 0.3
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-08",
+      "index_code": "SYNTH-A",
+      "horizon": "D1",
+      "actual_return": 0.016,
+      "neutral_threshold": 0.005,
+      "actual_label": "up",
+      "material_move": true,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "confidence": 0.61
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.65,
+            "neutral": 0.2,
+            "down": 0.15
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.6,
+            "neutral": 0.2,
+            "down": 0.2
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.55,
+            "neutral": 0.25,
+            "down": 0.2
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-08",
+      "index_code": "SYNTH-B",
+      "horizon": "D1",
+      "actual_return": -0.018,
+      "neutral_threshold": 0.005,
+      "actual_label": "down",
+      "material_move": true,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "confidence": 0.78
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.2,
+            "neutral": 0.2,
+            "down": 0.6
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.15,
+            "neutral": 0.2,
+            "down": 0.65
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.4,
+            "neutral": 0.25,
+            "down": 0.35
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-08",
+      "index_code": "SYNTH-C",
+      "horizon": "D1",
+      "actual_return": 0.005,
+      "neutral_threshold": 0.005,
+      "actual_label": "neutral",
+      "material_move": false,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "confidence": 0.52
+        },
+        "ai_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.4,
+            "neutral": 0.4,
+            "down": 0.2
+          }
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.35,
+            "neutral": 0.45,
+            "down": 0.2
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "up",
+          "probabilities": {
+            "up": 0.35,
+            "neutral": 0.45,
+            "down": 0.2
+          }
+        }
+      }
+    },
+    {
+      "target_date": "2026-01-09",
+      "index_code": "SYNTH-A",
+      "horizon": "D1",
+      "actual_return": -0.009,
+      "neutral_threshold": 0.005,
+      "actual_label": "down",
+      "material_move": true,
+      "signals": {
+        "manual_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "confidence": 0.67
+        },
+        "ai_fixture_agent": {
+          "status": "failed",
+          "failure_code": "provider_timeout"
+        },
+        "quant_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.2,
+            "neutral": 0.2,
+            "down": 0.6
+          }
+        },
+        "deterministic_fixture_agent": {
+          "status": "submitted",
+          "direction": "down",
+          "probabilities": {
+            "up": 0.2,
+            "neutral": 0.3,
+            "down": 0.5
+          }
+        }
+      }
+    }
+  ],
+  "content_hash": "4d5f1a1c0718aaf805050e6d073f0065c6d676b434e948d724dced2206897a9c"
+}

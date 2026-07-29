@@ -1,0 +1,77 @@
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command:
+      - forecast-loop
+      - database
+      - migrate
+    env_file:
+      - ${VERICOUNCIL_ENV_FILE:-.env}
+    volumes:
+      - ${FORECAST_LOOP_DATA_DIR:-./data}:/app/data
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ${VERICOUNCIL_ENV_FILE:-.env}
+    volumes:
+      - ${FORECAST_LOOP_DATA_DIR:-./data}:/app/data
+      - ./wiki:/app/wiki:ro
+    ports:
+      - "127.0.0.1:${FORECAST_LOOP_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8000/api/health', timeout=2).read()
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command:
+      - forecast-loop
+      - worker
+      - run
+    env_file:
+      - ${VERICOUNCIL_ENV_FILE:-.env}
+    volumes:
+      - ${FORECAST_LOOP_DATA_DIR:-./data}:/app/data
+      - ./wiki:/app/wiki:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FORECAST_LOOP_WEB_PORT:-4173}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null http://127.0.0.1:8080/
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s

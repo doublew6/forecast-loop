@@ -1,0 +1,48 @@
+{
+  "schema_version": "forecast-loop.example-public-signals/v1",
+  "as_of": "2026-07-27T15:00:00+08:00",
+  "observed_at": "2026-07-27T14:55:00+08:00",
+  "source_name": "forecast-loop synthetic public signal fixture",
+  "source_url": "https://example.org/forecast-loop/examples/providers/data",
+  "license": {
+    "spdx_id": "CC0-1.0",
+    "data_origin": "Synthetic forecast-loop compatibility fixture",
+    "source_url": "https://example.org/forecast-loop/examples/providers/data",
+    "redistribution_allowed": true,
+    "notice": "Synthetic values are dedicated to the public domain for adapter tests; they are not investment research or live market data."
+  },
+  "signals": [
+    {
+      "signal_id": "example-public-signal-000300-d1",
+      "submitted_at": "2026-07-27T15:02:00+08:00",
+      "direction": "up",
+      "probabilities": {
+        "up": 0.58,
+        "neutral": 0.27,
+        "down": 0.15
+      },
+      "direction_confidence": null,
+      "rationale": "Synthetic liquidity and breadth inputs support the declared direction.",
+      "counter_evidence": [
+        "A synthetic rate shock would invalidate the favorable liquidity regime."
+      ],
+      "invalidation_conditions": [
+        "Invalidate if the synthetic breadth score falls below zero."
+      ],
+      "citations": [
+        {
+          "source_id": "example-public-evidence-1",
+          "source_url": "https://www.sse.com.cn/disclosure/example",
+          "content_hash": "566bb2a6cb5468e05665c6f35a7a8af4d98c15bc198611b442615351b24f1cc4",
+          "observed_at": "2026-07-27T14:45:00+08:00"
+        }
+      ],
+      "blind_attestation": null,
+      "payload_schema": "forecast-loop.example-public-signal/v1",
+      "source_payload": {
+        "fixture_record_id": "synthetic-row-1"
+      }
+    }
+  ],
+  "content_hash": "6b99538fd0b2f07b7a1779bb6b2d4b5c4593597a17d16b38b0e1906a2c5f695e"
+}

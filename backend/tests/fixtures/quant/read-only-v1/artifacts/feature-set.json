@@ -1,0 +1,13 @@
+{
+  "schema_version": "forecast-loop.quant-feature-set/v1",
+  "features": [
+    {
+      "name": "momentum_5d",
+      "definition": "Synthetic five-session return"
+    },
+    {
+      "name": "volatility_20d",
+      "definition": "Synthetic twenty-session realized volatility"
+    }
+  ]
+}

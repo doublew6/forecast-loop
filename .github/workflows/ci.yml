@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12.12"
+          version: "0.9.8"
+      - run: uv python install 3.12.12
+      - run: uv sync --frozen --all-groups
+      - run: uv run ruff check backend scripts examples
+      - name: Run official adapter compatibility tests
+        run: uv run pytest backend/tests/test_adapter_examples_compatibility.py
+      - name: Verify cross-source benchmark golden
+        run: uv run forecast-loop benchmark verify benchmarks/cross-source-v1
+      - run: uv run pytest
+      - name: Verify database migrations
+        env:
+          VERICOUNCIL_DATABASE_URL: sqlite:///./data/ci.sqlite3
+        run: |
+          uv run alembic -c backend/alembic.ini upgrade head
+          uv run alembic -c backend/alembic.ini current
+          uv run alembic -c backend/alembic.ini check
+      - name: Run migration smoke
+        run: uv run python scripts/migration_smoke.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --run
+      - run: npm run build
+
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate Docker Compose configuration
+        env:
+          VERICOUNCIL_ENV_FILE: .env.example
+        run: docker compose config --quiet
+      - name: Run disposable Docker smoke
+        run: python3 scripts/docker_smoke.py

@@ -1,0 +1,16 @@
+forecast-loop
+Copyright 2026 forecast-loop contributors
+
+forecast-loop is an independent implementation.
+
+Its decision-governance design was conceptually inspired by Ray Dalio's
+publicly described Idea Meritocracy and Believability-Weighted Decision Making.
+No Bridgewater software, confidential information, or proprietary
+implementation is included, and this project is not affiliated with or
+endorsed by Bridgewater Associates:
+https://www.principles.com/principles/633d5d13-8610-425f-ad62-cd62347d9165
+
+Its multi-agent investment-committee design was informed by the publicly
+available TradingAgents project by TauricResearch. No TradingAgents source code
+is incorporated into forecast-loop. TradingAgents is licensed under the
+Apache License 2.0: https://github.com/TauricResearch/TradingAgents

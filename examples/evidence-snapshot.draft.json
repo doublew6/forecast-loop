@@ -1,0 +1,72 @@
+{
+  "as_of": "2026-07-13T18:00:00+08:00",
+  "data_cutoff": "2026-07-13T17:45:00+08:00",
+  "created_at": "2026-07-13T18:00:00+08:00",
+  "base_session": "2026-07-13",
+  "trading_calendar": {
+    "sessions": ["2026-07-13", "2026-07-14", "2026-07-15"],
+    "source_url": "https://example.invalid/replace-trading-calendar-source",
+    "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "observed_at": "2026-07-13T17:34:00+08:00",
+    "ingested_at": "2026-07-13T17:34:00+08:00"
+  },
+  "volatility_20d": {
+    "000300.SH": 0.0,
+    "000905.SH": 0.0,
+    "000852.SH": 0.0,
+    "399006.SZ": 0.0,
+    "000688.SH": 0.0
+  },
+  "market_data": {
+    "000300.SH": {
+      "trade_date": "2026-07-13",
+      "source_url": "https://example.invalid/replace-market-source",
+      "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observed_at": "2026-07-13T17:35:00+08:00",
+      "ingested_at": "2026-07-13T17:35:00+08:00"
+    },
+    "000905.SH": {
+      "trade_date": "2026-07-13",
+      "source_url": "https://example.invalid/replace-market-source",
+      "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observed_at": "2026-07-13T17:35:00+08:00",
+      "ingested_at": "2026-07-13T17:35:00+08:00"
+    },
+    "000852.SH": {
+      "trade_date": "2026-07-13",
+      "source_url": "https://example.invalid/replace-market-source",
+      "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observed_at": "2026-07-13T17:35:00+08:00",
+      "ingested_at": "2026-07-13T17:35:00+08:00"
+    },
+    "399006.SZ": {
+      "trade_date": "2026-07-13",
+      "source_url": "https://example.invalid/replace-market-source",
+      "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observed_at": "2026-07-13T17:35:00+08:00",
+      "ingested_at": "2026-07-13T17:35:00+08:00"
+    },
+    "000688.SH": {
+      "trade_date": "2026-07-13",
+      "source_url": "https://example.invalid/replace-market-source",
+      "source_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observed_at": "2026-07-13T17:35:00+08:00",
+      "ingested_at": "2026-07-13T17:35:00+08:00"
+    }
+  },
+  "target_sessions": ["2026-07-14", "2026-07-15"],
+  "items": [
+    {
+      "id": "REPLACE-WITH-STABLE-EVIDENCE-ID",
+      "title": "Replace with an actual fact available before data_cutoff",
+      "summary": "Replace this template; do not use it for a live run.",
+      "quote": "Replace with a short source excerpt that supports the fact.",
+      "source_url": "https://example.invalid/replace-me",
+      "event_time": "2026-07-13T14:00:00+08:00",
+      "published_at": "2026-07-13T14:05:00+08:00",
+      "ingested_at": "2026-07-13T14:06:00+08:00",
+      "entities": ["000300.SH"],
+      "event_type": "template"
+    }
+  ]
+}

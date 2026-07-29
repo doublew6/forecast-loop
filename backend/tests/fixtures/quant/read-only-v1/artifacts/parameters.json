@@ -1,0 +1,6 @@
+{
+  "schema_version": "forecast-loop.quant-parameters/v1",
+  "intercept": 0.0,
+  "neutral_band": 0.001,
+  "temperature": 1.0
+}

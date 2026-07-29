@@ -1,0 +1,97 @@
+{
+  "schema_version": "forecast-loop.example-public-evidence/v1",
+  "observed_at": "2026-07-27T14:50:00+08:00",
+  "source_name": "forecast-loop synthetic public evidence fixture",
+  "source_url": "https://example.org/forecast-loop/examples/adapters/data",
+  "license": {
+    "spdx_id": "CC0-1.0",
+    "data_origin": "Synthetic forecast-loop compatibility fixture",
+    "source_url": "https://example.org/forecast-loop/examples/adapters/data",
+    "redistribution_allowed": true,
+    "notice": "Synthetic values are dedicated to the public domain for adapter tests; they are not investment research or live market data."
+  },
+  "snapshot": {
+    "as_of": "2026-07-27T15:00:00+08:00",
+    "data_cutoff": "2026-07-27T14:55:00+08:00",
+    "created_at": "2026-07-27T15:05:00+08:00",
+    "base_session": "2026-07-27",
+    "trading_calendar": {
+      "sessions": [
+        "2026-07-27",
+        "2026-07-28",
+        "2026-07-29"
+      ],
+      "source_url": "https://www.sse.com.cn/market/trading-calendar",
+      "source_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "observed_at": "2026-07-27T14:45:00+08:00",
+      "ingested_at": "2026-07-27T14:50:00+08:00"
+    },
+    "volatility_20d": {
+      "000300.SH": 0.011,
+      "000905.SH": 0.014,
+      "000852.SH": 0.017,
+      "399006.SZ": 0.018,
+      "000688.SH": 0.02
+    },
+    "market_data": {
+      "000300.SH": {
+        "trade_date": "2026-07-27",
+        "source_url": "https://www.sse.com.cn/market/close",
+        "source_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "observed_at": "2026-07-27T14:50:00+08:00",
+        "ingested_at": "2026-07-27T14:54:00+08:00"
+      },
+      "000905.SH": {
+        "trade_date": "2026-07-27",
+        "source_url": "https://www.csindex.com.cn/market/close",
+        "source_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "observed_at": "2026-07-27T14:50:00+08:00",
+        "ingested_at": "2026-07-27T14:54:00+08:00"
+      },
+      "000852.SH": {
+        "trade_date": "2026-07-27",
+        "source_url": "https://www.csindex.com.cn/market/close",
+        "source_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "observed_at": "2026-07-27T14:50:00+08:00",
+        "ingested_at": "2026-07-27T14:54:00+08:00"
+      },
+      "399006.SZ": {
+        "trade_date": "2026-07-27",
+        "source_url": "https://www.szse.cn/market/close",
+        "source_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "observed_at": "2026-07-27T14:50:00+08:00",
+        "ingested_at": "2026-07-27T14:54:00+08:00"
+      },
+      "000688.SH": {
+        "trade_date": "2026-07-27",
+        "source_url": "https://www.sse.com.cn/market/close",
+        "source_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "observed_at": "2026-07-27T14:50:00+08:00",
+        "ingested_at": "2026-07-27T14:54:00+08:00"
+      }
+    },
+    "target_sessions": [
+      "2026-07-28",
+      "2026-07-29"
+    ],
+    "items": [
+      {
+        "id": "EXAMPLE-PUBLIC-EVIDENCE-1",
+        "title": "Synthetic public-domain compatibility fact",
+        "summary": "A synthetic market breadth observation used only to test adapter contracts.",
+        "quote": "Synthetic breadth remained positive at the frozen cutoff.",
+        "source_url": "https://www.sse.com.cn/disclosure/example",
+        "event_time": "2026-07-27T10:00:00+08:00",
+        "published_at": "2026-07-27T11:00:00+08:00",
+        "ingested_at": "2026-07-27T14:45:00+08:00",
+        "entities": [
+          "000300.SH"
+        ],
+        "event_type": "synthetic_compatibility_fixture",
+        "content_hash": "566bb2a6cb5468e05665c6f35a7a8af4d98c15bc198611b442615351b24f1cc4"
+      }
+    ],
+    "content_hash": "444b1b42ae63b2a644608fca17a9b4ab9770c709a36bdf7c8543d0ea10cabce6"
+  },
+  "content_hash": "75cb4b6c547f36add1bc7e76ec1bc36eb1f22c4cc11100acc7ac4b86d0f41947"
+}

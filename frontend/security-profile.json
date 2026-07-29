@@ -1,0 +1,8 @@
+{
+  "schema_version": "forecast-loop.frontend-security-profile/v1",
+  "build_system": "vite",
+  "entrypoint": "src/main.tsx",
+  "rendering": "client-side-spa",
+  "router_api": "declarative",
+  "react_server_components": false
+}

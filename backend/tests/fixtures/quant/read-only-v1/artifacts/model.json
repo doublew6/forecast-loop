@@ -1,0 +1,13 @@
+{
+  "schema_version": "forecast-loop.quant-model/v1",
+  "model_family": "synthetic-linear-softmax",
+  "classes": [
+    "up",
+    "neutral",
+    "down"
+  ],
+  "weights": {
+    "momentum_5d": 0.8,
+    "volatility_20d": -0.2
+  }
+}

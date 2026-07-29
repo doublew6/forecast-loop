@@ -1,0 +1,85 @@
+{
+  "schema_version": "forecast-loop.market-universe/v1",
+  "universe_id": "hk-index-and-equities",
+  "version": "1.0.0",
+  "market": "HK",
+  "timezone": "Asia/Hong_Kong",
+  "calendar_id": "XHKG",
+  "session_close": "16:00",
+  "horizons": ["D1", "D2"],
+  "instruments": [
+    {
+      "code": "HSI.HK",
+      "name": "恒生指数",
+      "asset_type": "index",
+      "exchange": "XHKG",
+      "currency": "HKD",
+      "sector": null,
+      "strategy_bucket": "large_cap",
+      "tags": ["broad-market", "hong-kong"],
+      "wiki_entry_ids": {
+        "macro_policy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "market_news_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "ai_storage_industry_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "strategy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "risk_critic_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH"
+      },
+      "agent_briefs": {
+        "macro_policy_agent": "分析香港联系汇率、全球流动性、内地政策及跨境资金对该标的 D1/D2 的传导。",
+        "market_news_agent": "只分析截止时间前已冻结的香港市场事件、公告、南向资金背景与预期差。",
+        "ai_storage_industry_agent": "作为行业暴露研究席位，分析该指数成份行业、盈利与估值驱动，不局限于 AI 存储主题。",
+        "strategy_agent": "比较本 universe 内标的的市场状态、风格暴露与相对强弱。",
+        "risk_critic_agent": "检查港股交易日历、时区、币种、共同来源、流动性与事件跳空风险。"
+      }
+    },
+    {
+      "code": "0700.HK",
+      "name": "腾讯控股",
+      "asset_type": "equity",
+      "exchange": "XHKG",
+      "currency": "HKD",
+      "sector": "Communication Services",
+      "strategy_bucket": "growth",
+      "tags": ["single-stock", "internet-platform"],
+      "wiki_entry_ids": {
+        "macro_policy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "market_news_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "ai_storage_industry_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "strategy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "risk_critic_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH"
+      },
+      "agent_briefs": {
+        "macro_policy_agent": "分析监管、汇率、利率和消费环境对公司短周期定价的传导。",
+        "market_news_agent": "只分析冻结的公司公告、产品事件、同业变化及市场预期差。",
+        "ai_storage_industry_agent": "分析公司基本面、业务分部、行业竞争、估值与个股催化，不机械套用 A 股行业框架。",
+        "strategy_agent": "结合个股风险与本 universe 相对强弱形成 D1/D2 概率判断。",
+        "risk_critic_agent": "检查公司事件、集中度、监管、流动性和跳空风险以及证据是否已被定价。"
+      }
+    },
+    {
+      "code": "9988.HK",
+      "name": "阿里巴巴-W",
+      "asset_type": "equity",
+      "exchange": "XHKG",
+      "currency": "HKD",
+      "sector": "Consumer Discretionary",
+      "strategy_bucket": "growth",
+      "tags": ["single-stock", "e-commerce", "cloud"],
+      "wiki_entry_ids": {
+        "macro_policy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "market_news_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "ai_storage_industry_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "strategy_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH",
+        "risk_critic_agent": "VC-WIKI-GLOBAL-EQUITY-RESEARCH"
+      },
+      "agent_briefs": {
+        "macro_policy_agent": "分析监管、汇率、利率和内地消费环境对公司短周期定价的传导。",
+        "market_news_agent": "只分析冻结的公司公告、平台与云业务事件、同业变化及预期差。",
+        "ai_storage_industry_agent": "分析电商、云计算、盈利、竞争、估值与个股催化，不机械套用 A 股行业框架。",
+        "strategy_agent": "结合个股风险与本 universe 相对强弱形成 D1/D2 概率判断。",
+        "risk_critic_agent": "检查公司事件、监管、流动性、同股不同地定价和跳空风险。"
+      }
+    }
+  ],
+  "content_hash": "9e45c84eaf91c9c6b6e656a511cf45693225d54805f01bf5124cc7ecee158504"
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "forecast-loop.quant-input-snapshot/v1",
+  "snapshot_id": "synthetic-000300-20260727",
+  "as_of": "2026-07-27T15:00:00+08:00",
+  "data_cutoff": "2026-07-27T14:55:00+08:00",
+  "created_at": "2026-07-27T15:01:00+08:00",
+  "feature_set_version": "synthetic-features-1.0.0",
+  "rows": [
+    {
+      "index_code": "000300.SH",
+      "features": [
+        {
+          "name": "momentum_5d",
+          "value": 0.012
+        },
+        {
+          "name": "volatility_20d",
+          "value": 0.011
+        }
+      ]
+    }
+  ],
+  "content_hash": "c8a750bcf0f5e392b8bf5ee0a455ff0216f593a0397d0519afa59466d5571304"
+}

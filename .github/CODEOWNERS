@@ -1,0 +1,11 @@
+* @doublew6
+
+/.github/ @doublew6
+/.githooks/ @doublew6
+/scripts/audit_public_boundary.py @doublew6
+/scripts/audit_release_artifacts.py @doublew6
+/scripts/audit_release_history.py @doublew6
+/scripts/private_boundary.py @doublew6
+/Makefile @doublew6
+/SECURITY.md @doublew6
+/docs/releasing.md @doublew6

@@ -1,0 +1,57 @@
+[project]
+name = "forecast-loop"
+version = "0.1.0"
+description = "Auditable forecasting framework for manual, quantitative, and AI agents"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = ["forecasting", "audit", "multi-agent", "research"]
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.14,<2",
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<1",
+  "langchain>=1.0,<2",
+  "langchain-openai>=0.3,<2",
+  "langgraph>=1.0,<2",
+  "langgraph-checkpoint-sqlite>=2.0,<4",
+  "pydantic-settings>=2.7,<3",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.scripts]
+forecast-loop = "app.cli:main"
+signalrace = "app.cli:main"
+vericouncil = "app.cli:main"
+
+[dependency-groups]
+dev = [
+  "pyyaml>=6,<7",
+  "pytest>=9.0.3,<10",
+  "pytest-asyncio>=1,<2",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+]
+
+[build-system]
+requires = ["hatchling==1.31.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+exclude = ["/.git"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/app"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend", "."]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

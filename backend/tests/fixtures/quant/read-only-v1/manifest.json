@@ -1,0 +1,66 @@
+{
+  "schema_version": "forecast-loop.quant-signal-bundle/v1",
+  "bundle_id": "synthetic-quant-bundle-20260727",
+  "as_of": "2026-07-27T15:00:00+08:00",
+  "data_cutoff": "2026-07-27T14:55:00+08:00",
+  "generated_at": "2026-07-27T15:02:00+08:00",
+  "artifacts": {
+    "code": {
+      "artifact_id": "code",
+      "version": "synthetic-code-1.0.0",
+      "path": "artifacts/strategy.py",
+      "sha256": "2977b0665e87a6bfa28a76d742d2c599927f2547cf67851f1d8a2485a41fcf01"
+    },
+    "parameters": {
+      "artifact_id": "parameters",
+      "version": "synthetic-parameters-1.0.0",
+      "path": "artifacts/parameters.json",
+      "sha256": "e9e5a678859d4be1b9972c218bb320d6d527344e7ce289d94195b6e7fdd1faa9"
+    },
+    "feature_set": {
+      "artifact_id": "feature_set",
+      "version": "synthetic-features-1.0.0",
+      "path": "artifacts/feature-set.json",
+      "sha256": "d310da0651bb6697f1c9c563b52f8eb257dc19bf3361cb34fb2ab15bf577d757"
+    },
+    "model": {
+      "artifact_id": "model",
+      "version": "synthetic-model-1.0.0",
+      "path": "artifacts/model.json",
+      "sha256": "de7d2f982e57da224bfd02d9dea2992accd0e7a676a683c4df8b8f869b094c81"
+    },
+    "input_snapshot": {
+      "artifact_id": "input_snapshot",
+      "version": "synthetic-snapshot-2026-07-27",
+      "path": "artifacts/input-snapshot.json",
+      "sha256": "ee2aa34256e1c2d3904e60daf8c59910ed92d4c30384fe17289f0d22d738f7a3"
+    }
+  },
+  "signals": [
+    {
+      "signal_id": "quant-fixture-000300-d1",
+      "target": {
+        "index_code": "000300.SH",
+        "horizon": "D1",
+        "base_trade_date": "2026-07-27",
+        "target_date": "2026-07-28",
+        "as_of": "2026-07-27T15:00:00+08:00",
+        "data_cutoff": "2026-07-27T14:55:00+08:00"
+      },
+      "direction": "up",
+      "probabilities": {
+        "up": 0.58,
+        "neutral": 0.27,
+        "down": 0.15
+      },
+      "rationale": "Synthetic momentum is positive while the volatility penalty remains limited.",
+      "counter_evidence": [
+        "A volatility shock can dominate the short momentum window."
+      ],
+      "invalidation_conditions": [
+        "The signal is invalid if momentum_5d is non-positive at the next frozen cutoff."
+      ]
+    }
+  ],
+  "content_hash": "0a5d65eba16b6628033dfa8534a5cb2fc43889767b2be76f626c6ace4c59b378"
+}
