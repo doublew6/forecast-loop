@@ -199,6 +199,11 @@ hides the system forecast and asks the user to choose up or down, then record a
 rationale, strongest counterargument, and observable invalidation condition.
 The comparison appears only after the judgment is sealed.
 
+Outside Demo mode, configure `FORECAST_LOOP_OPERATOR_TOKEN` in the private
+root `.env` and access the page through the loopback Vite dev/preview service
+or another trusted same-origin proxy. The server-side proxy replaces the
+authorization header; the token is never delivered to the browser.
+
 The CLI is also available. Pass reasons through files to keep them out of shell
 history:
 

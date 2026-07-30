@@ -165,6 +165,9 @@ repository variable `PAGES_ENABLED=true`。
 
 运行迁移后打开 `http://localhost:5173/judgments`。页面先隐藏系统预测，要求用户选择
 上涨或下跌，并填写理由、最强反证和可观察失效条件；封签后才显示对照结果。
+非 Demo 部署需要在仓库根目录的私有 `.env` 配置
+`FORECAST_LOOP_OPERATOR_TOKEN`，并通过 loopback Vite dev/preview 或其他可信
+同源代理访问。服务端代理会替换认证头，token 不进入浏览器。
 
 也可以通过 CLI 提交。理由使用文件传入，避免进入 shell history：
 
