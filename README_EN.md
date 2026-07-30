@@ -204,6 +204,10 @@ root `.env` and access the page through the loopback Vite dev/preview service
 or another trusted same-origin proxy. The server-side proxy replaces the
 authorization header; the token is never delivered to the browser.
 
+By default, a Live judgment closes at `09:30` on its target trade date in the
+market timezone sealed with that run. Only blind-attested records submitted
+before that deadline enter the independent shadow score.
+
 The CLI is also available. Pass reasons through files to keep them out of shell
 history:
 

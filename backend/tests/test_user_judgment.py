@@ -27,6 +27,7 @@ from app.services.user_judgment import (
 from app.services.user_judgment_markdown import (
     USER_JUDGMENT_POLICY_V1,
     USER_JUDGMENT_POLICY_V2,
+    USER_JUDGMENT_POLICY_V3,
     USER_JUDGMENT_SCHEMA_V1,
     USER_JUDGMENT_SCHEMA_V2,
     UserJudgmentWikiError,
@@ -123,11 +124,24 @@ def test_v1_markdown_renderer_remains_byte_compatible() -> None:
     assert "不是 VeriCouncil 正式".encode() in markdown
 
 
+def test_v2_markdown_renderer_remains_supported() -> None:
+    payload = _legacy_v1_payload()
+    payload["schema"] = USER_JUDGMENT_SCHEMA_V2
+    payload["policy_version"] = USER_JUDGMENT_POLICY_V2
+
+    markdown = render_user_judgment_markdown(payload, _canonical_hash(payload))
+
+    assert f"schema: {USER_JUDGMENT_SCHEMA_V2}".encode() in markdown
+    assert f'policy_version: "{USER_JUDGMENT_POLICY_V2}"'.encode() in markdown
+    assert "不是 forecast-loop 正式".encode() in markdown
+
+
 @pytest.mark.parametrize(
     ("policy_version", "schema"),
     [
         (USER_JUDGMENT_POLICY_V1, USER_JUDGMENT_SCHEMA_V2),
         (USER_JUDGMENT_POLICY_V2, USER_JUDGMENT_SCHEMA_V1),
+        (USER_JUDGMENT_POLICY_V3, USER_JUDGMENT_SCHEMA_V1),
         ("user-judgment/unknown", USER_JUDGMENT_SCHEMA_V2),
     ],
 )
@@ -165,7 +179,7 @@ def test_user_judgment_blind_target_seal_and_private_wiki(
     assert created.status_code == 201, created.text
     judgment = created.json()
     assert judgment["agent_id"] == "user_judgment_agent"
-    assert judgment["policy_version"] == USER_JUDGMENT_POLICY_V2
+    assert judgment["policy_version"] == USER_JUDGMENT_POLICY_V3
     assert judgment["policy_version"] == USER_JUDGMENT_POLICY_VERSION
     assert judgment["formal_score_eligible"] is False
     assert judgment["committee_direction"] in {"up", "down"}
@@ -478,7 +492,7 @@ def test_cross_universe_forecast_cannot_receive_user_judgment(
     assert response.json() == {"detail": "Forecast not found"}
 
 
-def test_live_judgment_window_closes_without_hindsight_backfill(
+def test_live_judgment_remains_open_until_target_market_open(
     client: TestClient,
 ) -> None:
     run = _create_demo_run(client)
@@ -490,6 +504,31 @@ def test_live_judgment_window_closes_without_hindsight_backfill(
         run_row.completed_at = now - timedelta(hours=3)
         forecast = run_row.forecasts[0]
         forecast.target_date = (now + timedelta(days=1)).date()
+        forecast_id = forecast.id
+        session.commit()
+
+    _enable_live_http(client)
+    response = client.post(
+        "/api/user-judgments",
+        json=_payload(forecast_id, blind=True),
+        headers=OPERATOR_HEADERS,
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["submission_deadline"].endswith("09:30:00+08:00")
+
+
+def test_live_judgment_closes_at_target_market_open(
+    client: TestClient,
+) -> None:
+    run = _create_demo_run(client)
+    now = datetime.now(ZONE).replace(microsecond=0)
+    with client.app.state.database.session_factory() as session:
+        run_row = session.get(WorkflowRun, run["id"])
+        assert run_row is not None
+        run_row.mode = "live"
+        run_row.completed_at = now - timedelta(days=2)
+        forecast = run_row.forecasts[0]
+        forecast.target_date = (now - timedelta(days=1)).date()
         forecast_id = forecast.id
         session.commit()
 

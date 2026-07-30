@@ -25,6 +25,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - The loopback Vite dev/preview proxy can authenticate Live operator routes
   with the server-side root `.env` token. It strips any browser-supplied
   `Authorization` header before injecting the configured credential.
+- New Live User Judgments use the target trade date's configured market-open
+  time as their deadline. Existing v1/v2 seals remain verifiable, while new
+  records use the immutable `user-judgment/v3` policy.
 
 ## [0.1.0] - 2026-07-29
 

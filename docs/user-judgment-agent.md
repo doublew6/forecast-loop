@@ -73,15 +73,16 @@ v1 的揭晓粒度是**单个 Forecast**：一条判断封签后会立即显示�
 浏览器不能提交 actor、时间、截止、mode、hash、run 身份或结果。`actor_id` 由
 `VERICOUNCIL_USER_JUDGMENT_ACTOR_ID` 在服务端配置。
 
-Live 截止取两者较早：
+Live 截止为目标交易日的市场开盘时刻：
 
 ```text
-run.completed_at + VERICOUNCIL_USER_JUDGMENT_WINDOW_MINUTES
-target_date 15:00 Asia/Shanghai
+target_date + VERICOUNCIL_USER_JUDGMENT_MARKET_OPEN
+in the immutable run's market timezone
 ```
 
-默认窗口为 120 分钟。run 未完成、已有可信结果或超过截止时一律拒绝；不能把到期后的
-回忆包装成事前预测。Demo 允许练习封签，但永不进入正式成绩。
+默认开盘时刻为 `09:30`。run 未完成、已有可信结果，或当前时间已经到达目标交易日
+开盘时刻时一律拒绝；不能把盘中或盘后的回忆包装成事前预测。既有记录保留其冻结的
+截止时间和策略版本，不会被重算或重写。Demo 允许练习封签，但永不进入正式成绩。
 
 相同 actor × Forecast 只有一份记录。完全相同的请求是幂等重试；不同内容返回 409。
 没有 PATCH 或 DELETE。运行 `make migrate` 后，数据库 trigger 也会拒绝对

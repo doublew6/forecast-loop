@@ -330,11 +330,11 @@ def test_custom_us_index_and_equity_run_end_to_end(tmp_path: Path) -> None:
             deadline = user_judgment_submission_deadline(
                 forecast,
                 timezone="Asia/Shanghai",
-                window_minutes=120,
+                market_open=time(9, 30),
             )
             assert deadline is not None
             assert deadline.tzinfo == zone
-            assert deadline.timetz().replace(tzinfo=None) == time(16, 0)
+            assert deadline.timetz().replace(tzinfo=None) == time(9, 30)
 
         forecast_detail = client.get(f"/api/forecasts/{forecast_id}")
         assert forecast_detail.status_code == 200
@@ -400,11 +400,11 @@ def test_legacy_default_run_clock_does_not_follow_current_custom_timezone(
         deadline = user_judgment_submission_deadline(
             forecast,
             timezone="America/New_York",
-            window_minutes=120,
+            market_open=time(9, 30),
         )
         assert deadline is not None
         assert deadline.tzinfo == zone
-        assert deadline.timetz().replace(tzinfo=None) == time(15, 0)
+        assert deadline.timetz().replace(tzinfo=None) == time(9, 30)
 
         forecast.run.data_quality = {
             "market_universe": {
@@ -699,11 +699,11 @@ def test_legacy_user_judgment_clock_is_default_and_malformed_custom_fails(
         deadline = user_judgment_submission_deadline(
             forecast,
             timezone="America/New_York",
-            window_minutes=120,
+            market_open=time(9, 30),
         )
         assert deadline is not None
         assert deadline.tzinfo == ZoneInfo("Asia/Shanghai")
-        assert deadline.timetz().replace(tzinfo=None) == time(15, 0)
+        assert deadline.timetz().replace(tzinfo=None) == time(9, 30)
 
         forecast.run.market_universe_hash = "f" * 64
         session.flush()
@@ -711,5 +711,5 @@ def test_legacy_user_judgment_clock_is_default_and_malformed_custom_fails(
             user_judgment_submission_deadline(
                 forecast,
                 timezone="America/New_York",
-                window_minutes=120,
+                market_open=time(9, 30),
             )

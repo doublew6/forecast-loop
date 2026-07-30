@@ -15,6 +15,7 @@ USER_JUDGMENT_SCHEMA_V1 = "vericouncil.user-judgment/v1"
 USER_JUDGMENT_SCHEMA_V2 = "forecast-loop.user-judgment/v2"
 USER_JUDGMENT_POLICY_V1 = "user-judgment/v1"
 USER_JUDGMENT_POLICY_V2 = "user-judgment/v2"
+USER_JUDGMENT_POLICY_V3 = "user-judgment/v3"
 
 
 class UserJudgmentWikiError(ValueError):
@@ -27,7 +28,7 @@ def render_user_judgment_markdown(payload: dict[str, Any], content_hash: str) ->
     policy_version = payload.get("policy_version")
     if policy_version == USER_JUDGMENT_POLICY_V1:
         return render_user_judgment_markdown_v1(payload, content_hash)
-    if policy_version == USER_JUDGMENT_POLICY_V2:
+    if policy_version in {USER_JUDGMENT_POLICY_V2, USER_JUDGMENT_POLICY_V3}:
         return render_user_judgment_markdown_v2(payload, content_hash)
     raise UserJudgmentWikiError("Unsupported User Judgment Markdown policy version")
 
@@ -35,7 +36,7 @@ def render_user_judgment_markdown(payload: dict[str, Any], content_hash: str) ->
 def user_judgment_schema_for_policy(policy_version: str) -> str:
     if policy_version == USER_JUDGMENT_POLICY_V1:
         return USER_JUDGMENT_SCHEMA_V1
-    if policy_version == USER_JUDGMENT_POLICY_V2:
+    if policy_version in {USER_JUDGMENT_POLICY_V2, USER_JUDGMENT_POLICY_V3}:
         return USER_JUDGMENT_SCHEMA_V2
     raise UserJudgmentWikiError("Unsupported User Judgment policy version")
 

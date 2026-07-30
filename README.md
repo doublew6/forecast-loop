@@ -185,7 +185,8 @@ uv run forecast-loop judgment verify <judgment-id>
 uv run forecast-loop judgment export <judgment-id>
 ```
 
-只有截止前提交、声明尚未查看系统预测的 Live 记录才进入独立 shadow 成绩。
+Live 判断默认在目标交易日 `09:30`（以该运行冻结的市场时区为准）截止。只有截止前
+提交、声明尚未查看系统预测的 Live 记录才进入独立 shadow 成绩。
 
 ### 2. Daily Reflection
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import time
+
 from app.config import REPOSITORY_ROOT, Settings
 
 
@@ -17,3 +19,12 @@ def test_local_wiki_and_archives_default_to_gitignored_data() -> None:
         == REPOSITORY_ROOT / "data" / "reflection-archives"
     )
     assert settings.lesson_archive_root == REPOSITORY_ROOT / "data" / "lesson-archives"
+    assert settings.user_judgment_market_open == time(9, 30)
+
+
+def test_user_judgment_market_open_loads_from_environment(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("VERICOUNCIL_USER_JUDGMENT_MARKET_OPEN", "08:45")
+
+    assert Settings().user_judgment_market_open == time(8, 45)
