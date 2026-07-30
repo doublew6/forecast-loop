@@ -22,6 +22,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Human-readable Reflection and Lesson archives now default to
   `data/reflection-archives/` and `data/lesson-archives/`; generated Markdown
   under the legacy top-level layout is Git-ignored as a second guard.
+- The loopback Vite dev/preview proxy can authenticate Live operator routes
+  with the server-side root `.env` token. It strips any browser-supplied
+  `Authorization` header before injecting the configured credential.
 
 ## [0.1.0] - 2026-07-29
 

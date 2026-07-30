@@ -43,6 +43,12 @@ FORECAST_LOOP_OPERATOR_TOKEN=<至少 32 个无空白字符的随机值>
 保护路由返回 `503` 并保持 fail closed。配置了 token 后，缺失、格式不对或不
 匹配的凭证统一返回 `401` 与 `WWW-Authenticate: Bearer`，响应不会回显 token。
 
+仓库自带的 loopback Vite dev/preview 服务会从仓库根目录的私有 `.env` 读取这个
+非 `VITE_*` 变量，仅在服务端代理 `/api` 时使用。代理先删除浏览器传入的
+`Authorization`，再注入配置的 operator Bearer token；token 不会进入
+`import.meta.env`、静态构建产物或浏览器响应。API 和 Web 必须由同一个受控运行
+账户读取该文件，并继续只监听 loopback。
+
 调用示例：
 
 ```bash
@@ -67,7 +73,10 @@ curl \
 
 这是单节点私有运行时的首选方式。API 与 Web 继续绑定 `127.0.0.1`，操作员
 从受控工作站通过 SSH 通道转发端口。SSH 负责链路加密，不需要修改应用监听
-地址，也不会把数据库或 handoff 目录变成共享写路径。
+地址，也不会把数据库或 handoff 目录变成共享写路径。使用仓库自带的 Vite
+dev/preview 服务时，先在运行节点的仓库根 `.env` 配置 operator token，然后
+重启 API 与 Web；浏览器只访问转发后的 Web origin，由运行节点的 `/api` 代理
+注入凭证。不要把 API 端口作为浏览器的跨域地址。
 
 ### 方式二：同源 TLS 反向代理
 
@@ -92,9 +101,10 @@ curl \
 `GET`/`POST` 及 `Authorization`、`Content-Type`、`Idempotency-Key`，
 并关闭 credentialed CORS。被允许的 Origin 仍必须通过 Bearer 认证。
 
-当前前端不应内嵌 operator token。没有可信同源代理时，浏览器只使用公开 GET，
-写操作通过本机 CLI、SSH 后的受控调用或其他不暴露 token 的 operator 工作流
-完成。
+前端不应内嵌 operator token。仓库自带的 loopback Vite 代理适用于受控本机或
+SSH tunnel 的单操作员部署；其他部署若没有可信同源代理，浏览器只使用公开
+GET，写操作通过本机 CLI、SSH 后的受控调用或其他不暴露 token 的 operator
+工作流完成。
 
 容器内置 Web 服务会返回 CSP、`nosniff`、拒绝 framing、referrer 和
 permissions 等基础安全响应头。若改用其他静态托管或反向代理，必须在该入口
