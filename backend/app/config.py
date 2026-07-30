@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -88,11 +89,9 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="FORECAST_LOOP_OPERATOR_TOKEN",
     )
-    user_judgment_window_minutes: int = Field(
-        default=120,
-        ge=5,
-        le=24 * 60,
-        validation_alias="VERICOUNCIL_USER_JUDGMENT_WINDOW_MINUTES",
+    user_judgment_market_open: time = Field(
+        default=time(9, 30),
+        validation_alias="VERICOUNCIL_USER_JUDGMENT_MARKET_OPEN",
     )
     evidence_snapshot_builder: Path | None = Field(
         default=None,

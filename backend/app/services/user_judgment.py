@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, time
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -35,6 +35,7 @@ from .signal_contract import persist_agent_spec
 from .user_judgment_markdown import (
     USER_JUDGMENT_POLICY_V1,
     USER_JUDGMENT_POLICY_V2,
+    USER_JUDGMENT_POLICY_V3,
     UserJudgmentWikiError,
     load_verified_user_judgment_markdown,
     publish_user_judgment_markdown,
@@ -43,11 +44,15 @@ from .user_judgment_markdown import (
     user_judgment_schema_for_policy,
 )
 
-USER_JUDGMENT_POLICY_VERSION = USER_JUDGMENT_POLICY_V2
+USER_JUDGMENT_POLICY_VERSION = USER_JUDGMENT_POLICY_V3
 USER_JUDGMENT_EVALUATION_POLICY_VERSION = "user-judgment-evaluation/v1"
 USER_JUDGMENT_MODEL_NAME = "human-self-report-v1"
 SUPPORTED_USER_JUDGMENT_POLICY_VERSIONS = frozenset(
-    {USER_JUDGMENT_POLICY_V1, USER_JUDGMENT_POLICY_V2}
+    {
+        USER_JUDGMENT_POLICY_V1,
+        USER_JUDGMENT_POLICY_V2,
+        USER_JUDGMENT_POLICY_V3,
+    }
 )
 
 
@@ -70,7 +75,7 @@ def create_user_judgment(
     actor_id: str,
     wiki_root: Path,
     timezone: str,
-    window_minutes: int,
+    market_open: time,
     expected_mode: Literal["demo", "live"],
     market_universe_hash: str,
     now: datetime | None = None,
@@ -135,7 +140,7 @@ def create_user_judgment(
     deadline = user_judgment_submission_deadline(
         forecast,
         timezone=timezone,
-        window_minutes=window_minutes,
+        market_open=market_open,
     )
     run = forecast.run
     if run.status != "completed" or run.completed_at is None:
@@ -279,23 +284,21 @@ def user_judgment_submission_deadline(
     forecast: Forecast,
     *,
     timezone: str,
-    window_minutes: int,
+    market_open: time,
 ) -> datetime | None:
     if forecast.run.mode == "demo":
         return None
     if forecast.run.completed_at is None:
         return None
-    zone, session_close = _run_market_clock(
+    zone, _session_close = _run_market_clock(
         forecast,
         fallback_timezone=timezone,
     )
-    completed_at = _aware(forecast.run.completed_at, zone)
-    target_close = datetime.combine(
+    return datetime.combine(
         forecast.target_date,
-        session_close,
+        market_open,
         tzinfo=zone,
     )
-    return min(completed_at + timedelta(minutes=window_minutes), target_close)
 
 
 def forecast_market_zone(
@@ -354,7 +357,7 @@ def user_judgment_submission_status(
     *,
     actor_id: str,
     timezone: str,
-    window_minutes: int,
+    market_open: time,
     now: datetime | None = None,
 ) -> tuple[bool, str, datetime | None, UserJudgment | None]:
     zone, _session_close = _run_market_clock(
@@ -374,7 +377,7 @@ def user_judgment_submission_status(
     deadline = user_judgment_submission_deadline(
         forecast,
         timezone=timezone,
-        window_minutes=window_minutes,
+        market_open=market_open,
     )
     if existing is not None:
         return False, "这条目标已经封签，原记录不可覆盖。", deadline, existing

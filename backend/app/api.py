@@ -367,7 +367,7 @@ def user_judgment_targets(
             forecast,
             actor_id=settings.user_judgment_actor_id,
             timezone=settings.timezone,
-            window_minutes=settings.user_judgment_window_minutes,
+            market_open=settings.user_judgment_market_open,
             now=now,
         )
         items.append(
@@ -418,7 +418,7 @@ def create_user_judgment_route(
             actor_id=settings.user_judgment_actor_id,
             wiki_root=settings.user_judgment_wiki_root,
             timezone=settings.timezone,
-            window_minutes=settings.user_judgment_window_minutes,
+            market_open=settings.user_judgment_market_open,
             expected_mode=mode,
             market_universe_hash=universe.content_hash,
         )
