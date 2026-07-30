@@ -104,7 +104,7 @@ permissions 等基础安全响应头。若改用其他静态托管或反向代�
 
 - API 不记录 `Authorization` header；反向代理也应屏蔽该 header，并对查询
   参数做脱敏。
-- `data/handoffs`、`data/user-wiki`、SQLite、checkpoint 和上游只读副本不
+- `data/wiki`、`data/handoffs`、`data/user-wiki`、SQLite、checkpoint 和上游只读副本不
   作为静态目录提供。
 - 生产数据库迁移与备份由本机 operator 执行；Web 请求不能获得文件系统写入
   handoff、Wiki 发布区或上游交易数据库的权限。

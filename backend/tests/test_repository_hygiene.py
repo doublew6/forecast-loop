@@ -29,6 +29,8 @@ def _git_check_ignore(
         "data/snapshots/2026-07-13.json",
         "data/snapshots/nested/2026-07-13.json",
         "data/judgment-bundles/example/manifest.json",
+        "data/wiki/local-agent.md",
+        "data/agents/local-adapter/config.json",
         "data/future-runtime-output/example.json",
     ],
 )
@@ -61,3 +63,29 @@ def test_data_readme_remains_trackable() -> None:
     assert ignore_result.returncode == 1
     assert tracked_result.returncode == 0, tracked_result.stderr
     assert tracked_result.stdout.splitlines() == ["data/README.md"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "reflections/2026-07-30-D1-local.md",
+        "lessons/local-lesson.md",
+    ],
+)
+def test_generated_markdown_archives_are_gitignored(path: str) -> None:
+    result = _git_check_ignore(path, verbose=True)
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "reflections/README.md",
+        "lessons/README.md",
+    ],
+)
+def test_archive_readmes_remain_trackable(path: str) -> None:
+    result = _git_check_ignore(path, verbose=False)
+
+    assert result.returncode == 1

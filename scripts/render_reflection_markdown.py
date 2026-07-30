@@ -1,4 +1,4 @@
-"""Render immutable top-level Markdown from a completed reflection."""
+"""Render immutable local Markdown archives from a completed reflection."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ def main() -> None:
             artifacts = write_reflection_markdown(
                 session,
                 args.reflection_id,
+                reflections_root=settings.reflection_archive_root,
+                lessons_root=settings.lesson_archive_root,
             )
         print(
             json.dumps(

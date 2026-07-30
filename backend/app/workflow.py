@@ -133,7 +133,7 @@ class CommitteeWorkflow:
         self.settings = settings
         self.database = database
         self.provider = provider or build_provider(settings)
-        self.wiki = wiki or WikiCatalog(settings.wiki_path)
+        self.wiki = wiki or WikiCatalog.from_settings(settings)
         self.evidence_source = evidence_source
         self.universe = universe or load_market_universe(settings.market_universe_path)
         if self.universe.timezone != settings.timezone:

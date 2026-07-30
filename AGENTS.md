@@ -52,8 +52,11 @@
 
 - Predictions may use only evidence and Wiki material published before their
   cutoff. Never rewrite historical snapshots or forecasts.
-- Keep stable frameworks in `wiki/`, immutable facts in evidence snapshots, and
-  learned lessons in a separate append-only lifecycle.
+- Keep operator frameworks in the configured local Wiki, immutable facts in
+  evidence snapshots, and learned lessons in a separate append-only lifecycle.
+- The checked-in `wiki/` tree contains only synthetic `demo-only` examples and
+  templates. Never add operator research, personal Agent pages, or local Wiki
+  history there. Live runs must never fall back to bundled examples.
 - Proposed Wiki changes require inspectable public sources, stable entry and
   section IDs, deterministic validation, semantic versioning, and an audit
   trail.

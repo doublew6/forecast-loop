@@ -371,7 +371,7 @@ export function UserJudgments() {
                 </div>
                 <div className="judgment-boundary-note">
                   <ShieldCheck size={17} />
-                  <p><strong>知识边界</strong>每日判断保存在私有 User Judgment Wiki，不进入可被 Agent 引用的正式 `wiki/`；复盘后只能另行提出 Lesson。</p>
+                  <p><strong>知识边界</strong>每日判断保存在私有 User Judgment Wiki，不进入可被 Agent 引用的正式 Agent Wiki；复盘后只能另行提出 Lesson。</p>
                 </div>
               </aside>
             </section>

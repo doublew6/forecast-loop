@@ -47,7 +47,7 @@ def create_app(
             else:
                 require_schema_current(database.engine)
             _fail_interrupted_runs(database, timezone=resolved.timezone)
-            wiki = WikiCatalog(resolved.wiki_path)
+            wiki = WikiCatalog.from_settings(resolved)
             workflow = CommitteeWorkflow(
                 settings=resolved,
                 database=database,

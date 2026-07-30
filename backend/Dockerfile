@@ -25,7 +25,8 @@ RUN uv sync --frozen --no-dev \
 ENV PATH="/app/.venv/bin:$PATH"
 ENV VERICOUNCIL_DATABASE_URL="sqlite:////app/data/vericouncil.sqlite3"
 ENV VERICOUNCIL_CHECKPOINT_PATH="/app/data/checkpoints/langgraph.sqlite3"
-ENV VERICOUNCIL_WIKI_PATH="/app/wiki"
+ENV VERICOUNCIL_WIKI_PATH="/app/data/wiki"
+ENV FORECAST_LOOP_BUNDLED_WIKI_PATH="/app/wiki"
 
 USER 10001:10001
 EXPOSE 8000

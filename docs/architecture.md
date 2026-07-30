@@ -72,7 +72,8 @@ flowchart LR
 系统由五层组成：
 
 1. 数据层：行情、交易日历、事件和原始来源快照。
-2. 知识层：仓库内版本化 Markdown Wiki。
+2. 知识层：运行者本地 `data/wiki/`（或配置路径）中的版本化 Markdown Wiki；源码只带
+   `demo-only` 合成示例。
 3. 决策层：LangChain 结构化输出与 LangGraph 状态机。
 4. 审计层：SQLite 业务数据、内容哈希和 LangGraph checkpoint。
 5. 表现层：FastAPI 与 React 页面。

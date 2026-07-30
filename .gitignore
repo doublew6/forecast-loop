@@ -17,6 +17,10 @@ htmlcov/
 *.db
 /data/*
 !/data/README.md
+/reflections/*
+!/reflections/README.md
+/lessons/*
+!/lessons/README.md
 .pnpm-store/
 /node_modules/
 frontend/node_modules/

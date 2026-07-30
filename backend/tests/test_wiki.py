@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from app.config import Settings
 from app.schemas import Citation
 from app.services.wiki import WikiCatalog, parse_frontmatter
+
+REPOSITORY_ROOT = Path(__file__).parents[2]
 
 
 def test_frontmatter_and_explicit_sections_are_parsed(tmp_path) -> None:
@@ -226,6 +230,80 @@ def test_missing_catalog_uses_demo_fallback_but_live_freeze_fails_closed(tmp_pat
     assert frozen.select_for_agent("strategy_agent").id == "VC-WIKI-DEMO-METHODOLOGY"
     with pytest.raises(RuntimeError, match="no active entries"):
         catalog.freeze(allow_demo_fallback=False)
+
+
+def test_demo_uses_bundled_examples_only_when_local_catalog_is_empty(tmp_path) -> None:
+    local_root = tmp_path / "local-wiki"
+    bundled_root = tmp_path / "bundled-wiki"
+    bundled_root.mkdir()
+    (bundled_root / "example.md").write_text(
+        """---
+id: VC-WIKI-DEMO-EXAMPLE
+title: Bundled example
+version: 0.1.0
+status: demo-only
+---
+# Bundled
+""",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        wiki_path=local_root,
+        bundled_wiki_path=bundled_root,
+        execution_provider="demo",
+    )
+    catalog = WikiCatalog.from_settings(settings)
+
+    assert [entry.id for entry in catalog.list_entries()] == ["VC-WIKI-DEMO-EXAMPLE"]
+
+    local_root.mkdir()
+    (local_root / "local.md").write_text(
+        """---
+id: VC-WIKI-LOCAL
+title: Local operator Wiki
+version: 1.0.0
+status: active
+---
+# Local
+""",
+        encoding="utf-8",
+    )
+
+    assert [entry.id for entry in catalog.list_entries()] == ["VC-WIKI-LOCAL"]
+
+
+def test_live_never_reads_the_bundled_demo_catalog(tmp_path) -> None:
+    bundled_root = tmp_path / "bundled-wiki"
+    bundled_root.mkdir()
+    (bundled_root / "example.md").write_text(
+        """---
+id: VC-WIKI-DEMO-EXAMPLE
+title: Bundled example
+version: 0.1.0
+status: demo-only
+---
+# Bundled
+""",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        wiki_path=tmp_path / "missing-local-wiki",
+        bundled_wiki_path=bundled_root,
+        execution_provider="codex_file",
+        demo_mode=False,
+    )
+    catalog = WikiCatalog.from_settings(settings)
+
+    assert catalog.get("VC-WIKI-DEMO-EXAMPLE") is None
+    with pytest.raises(RuntimeError, match="no active entries"):
+        catalog.freeze(allow_demo_fallback=False)
+
+
+def test_public_repository_contains_only_a_few_demo_entries() -> None:
+    entries = WikiCatalog(REPOSITORY_ROOT / "wiki").list_entries()
+
+    assert 1 <= len(entries) <= 3
+    assert {entry.status for entry in entries} == {"demo-only"}
 
 
 def test_runtime_snapshot_excludes_drafts(tmp_path) -> None:
