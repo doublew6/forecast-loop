@@ -9,7 +9,7 @@
 
 - 主 SQLite 数据库与 LangGraph checkpoint；
 - `data/handoffs`、reflection、market snapshot 与 evidence snapshot；
-- 正式 Wiki 和私有 User Judgment Wiki；
+- `data/wiki/` 中的正式 Agent Wiki 和私有 User Judgment Wiki；
 - 本地环境配置，但不要把密钥复制到仓库或 Issue。
 
 如果已有 recovery bundle，先运行：

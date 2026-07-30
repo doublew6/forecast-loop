@@ -82,7 +82,7 @@ User Judgment 的理由已封签但尚未进入正式归因 rubric，这是 P2 �
   并生成数据库内容哈希与私有 Markdown 文件哈希。
 - 用户成绩只采用可信 `EvaluationResult` 和 completed evaluation batch；不接受用户提交
   actual return，也不为未提交的三分类概率伪造 Brier。
-- 私有 User Judgment Wiki 与正式 `wiki/` 分离，不能被预测 Agent 引用或自动晋升为
+- 私有 User Judgment Wiki 与正式 `data/wiki/` 分离，不能被预测 Agent 引用或自动晋升为
   常青知识。
 
 ## P1：开源研究产品成熟度

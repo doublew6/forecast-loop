@@ -1,20 +1,22 @@
-# Reflection cases
+# Reflection archive layout
 
-这里保存已完成 `mode=live` 预测的版本化反省案例。它与预测时使用的
-`wiki/` 严格分离，不能被历史预测当作事前知识读取。
+This directory documents the public archive format only. Completed Live
+reflection Markdown defaults to the Git-ignored
+`data/reflection-archives/` directory.
 
-规则：
+Rules:
 
-- Demo 不生成案例。
-- 每份案例绑定 `ReflectionRun`、目标交易日、D1/D2、冻结行情快照、
-  来源快照和不可变回执。
-- 修订必须新增文件并声明 `supersedes`，不得覆盖旧案例。
-- Codex 只能提交交接目录中的两个 `drafts.json`。`finalize` 负责数据库和
-  私有 `receipt.json`；这里的 Markdown 由独立的确定性
-  `make reflection-render ARGS="<reflection-id>"` 从 completed Live 记录生成，
-  不是 finalize 的副作用。
-- 同一已校验内容可以幂等重渲染；目标文件内容不同则拒绝覆盖。
-- 案例可以说明原因尚未证实，不得用事后相关性编造因果。
+- Demo does not create formal reflection archives.
+- Each case binds its ReflectionRun, target session, horizon, frozen market
+  snapshot, source snapshot, and immutable receipt.
+- A revision creates a new file with `supersedes`; it never overwrites an old
+  case.
+- Finalize publishes database rows and a private receipt. The separate
+  `reflection-render` command writes the human-readable archive.
+- Rendering identical bytes is idempotent; conflicting existing bytes fail
+  closed.
+- Cases may leave causes unresolved and must not invent post-hoc causality.
 
-运行期私有交接包位于 `data/reflections/`，不提交 Git，也不通过 Web
-服务暴露写入口。
+Runtime handoffs live under `data/reflections/`; rendered cases live under
+`data/reflection-archives/`. Neither path belongs in Git or prediction-time
+Wiki input.

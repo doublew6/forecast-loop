@@ -963,7 +963,7 @@ def _worker_command(args: argparse.Namespace) -> int:
             require_schema_current(database.engine)
         except SchemaNotReadyError as exc:
             raise SystemExit(str(exc)) from exc
-        wiki = WikiCatalog(settings.wiki_path)
+        wiki = WikiCatalog.from_settings(settings)
         workflow = CommitteeWorkflow(
             settings=settings,
             database=database,

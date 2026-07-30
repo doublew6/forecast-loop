@@ -8,9 +8,12 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..schemas import Citation, WikiEntryRead, WikiSection
+
+if TYPE_CHECKING:
+    from ..config import Settings
 
 SECTION_RE = re.compile(
     r"^<!--\s*section:([a-zA-Z0-9_-]+)\s*-->\s*$",
@@ -114,14 +117,51 @@ def _mask_non_newline_characters(match: re.Match[str]) -> str:
 
 
 class WikiCatalog:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, demo_path: Path | None = None) -> None:
         self.path = path
+        self.demo_path = demo_path
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> WikiCatalog:
+        """Load local operator Wiki first and bundled examples only in Demo."""
+
+        return cls(
+            settings.wiki_path,
+            demo_path=(
+                settings.bundled_wiki_path
+                if settings.use_demo_provider
+                else None
+            ),
+        )
 
     def documents(self, *, include_body: bool = False) -> list[WikiDocument]:
+        documents = self._documents_from_path(
+            self.path,
+            include_body=include_body,
+        )
+        if (
+            not documents
+            and self.demo_path is not None
+            and self.demo_path.resolve() != self.path.resolve()
+        ):
+            documents = self._documents_from_path(
+                self.demo_path,
+                include_body=include_body,
+            )
+        if not documents:
+            documents.append(self._fallback_document(include_body=include_body))
+        return documents
+
+    @staticmethod
+    def _documents_from_path(
+        root: Path,
+        *,
+        include_body: bool,
+    ) -> list[WikiDocument]:
         documents: list[WikiDocument] = []
-        if self.path.exists():
-            for path in sorted(self.path.rglob("*.md")):
-                relative_directories = path.relative_to(self.path).parts[:-1]
+        if root.exists():
+            for path in sorted(root.rglob("*.md")):
+                relative_directories = path.relative_to(root).parts[:-1]
                 if UNPUBLISHED_DIR_NAMES.intersection(relative_directories):
                     continue
                 text = path.read_text(encoding="utf-8")
@@ -163,8 +203,6 @@ class WikiCatalog:
                     body=body if include_body else None,
                 )
                 documents.append(WikiDocument(entry=entry, path=path))
-        if not documents:
-            documents.append(self._fallback_document(include_body=include_body))
         return documents
 
     def list_entries(self) -> list[WikiEntryRead]:
@@ -374,6 +412,8 @@ class FrozenWikiCatalog(WikiCatalog):
     """In-memory Wiki view used for the whole lifetime of one committee run."""
 
     def __init__(self, entries: list[WikiEntryRead | dict[str, Any]]) -> None:
+        self.path = Path(".")
+        self.demo_path = None
         self._entries = tuple(
             WikiEntryRead.model_validate(entry).model_copy(deep=True) for entry in entries
         )

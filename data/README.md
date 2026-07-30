@@ -4,6 +4,10 @@ This directory is intentionally excluded from version control except for this
 file. Runtime databases, frozen evidence snapshots, market-data caches and
 LangGraph checkpoints are local artifacts.
 
+Operator-maintained Agent Wiki pages live under `data/wiki/` by default. Local
+Agent pages, indexes, logs, and proposals belong there or in another configured
+local root, never in the public source-controlled `wiki/` examples.
+
 Portable completed-run bundles exported by the public CLI live under
 `data/exports/<run-id>/`. Each directory contains normalized run, opinion and
 forecast JSON plus a content-addressed `manifest.json`. Treat these bundles as
@@ -74,6 +78,7 @@ source set is allowed only when the analysis leaves unverified causes
 `reflection-finalize` publishes the database rows and the private
 `receipt.json`; it does not publish Markdown. The separate
 `reflection-render` command reads a completed Live reflection and writes
-immutable human-readable archives to the repository-level `reflections/` and
-`lessons/` directories. Those top-level directories are not runtime handoff
-roots and are never prediction-time Wiki input.
+immutable human-readable archives to `data/reflection-archives/` and
+`data/lesson-archives/`. The top-level `reflections/` and `lessons/`
+directories contain format documentation only. Archives are never
+prediction-time Wiki input.

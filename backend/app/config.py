@@ -35,8 +35,12 @@ class Settings(BaseSettings):
         validation_alias="VERICOUNCIL_CHECKPOINT_PATH",
     )
     wiki_path: Path = Field(
-        default=REPOSITORY_ROOT / "wiki",
+        default=REPOSITORY_ROOT / "data" / "wiki",
         validation_alias="VERICOUNCIL_WIKI_PATH",
+    )
+    bundled_wiki_path: Path = Field(
+        default=REPOSITORY_ROOT / "wiki",
+        validation_alias="FORECAST_LOOP_BUNDLED_WIKI_PATH",
     )
     market_universe_path: Path | None = Field(
         default=None,
@@ -49,6 +53,14 @@ class Settings(BaseSettings):
     reflection_root: Path = Field(
         default=REPOSITORY_ROOT / "data" / "reflections",
         validation_alias="VERICOUNCIL_REFLECTION_ROOT",
+    )
+    reflection_archive_root: Path = Field(
+        default=REPOSITORY_ROOT / "data" / "reflection-archives",
+        validation_alias="FORECAST_LOOP_REFLECTION_ARCHIVE_ROOT",
+    )
+    lesson_archive_root: Path = Field(
+        default=REPOSITORY_ROOT / "data" / "lesson-archives",
+        validation_alias="FORECAST_LOOP_LESSON_ARCHIVE_ROOT",
     )
     market_snapshot_root: Path = Field(
         default=REPOSITORY_ROOT / "data" / "market-snapshots",

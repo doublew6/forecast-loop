@@ -14,6 +14,15 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Repository-external private-boundary rules that never enter the public tree or
   appear in scanner output.
 
+### Changed
+
+- Operator-maintained Agent Wiki pages now default to the Git-ignored
+  `data/wiki/` tree. The checked-in Wiki contains only three synthetic
+  `demo-only` examples, and Live never falls back to them.
+- Human-readable Reflection and Lesson archives now default to
+  `data/reflection-archives/` and `data/lesson-archives/`; generated Markdown
+  under the legacy top-level layout is Git-ignored as a second guard.
+
 ## [0.1.0] - 2026-07-29
 
 ### Added

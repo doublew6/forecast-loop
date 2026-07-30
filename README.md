@@ -87,7 +87,9 @@ read-only sources + versioned Wiki
 ```
 
 后端使用 FastAPI、LangChain 和 LangGraph；前端使用 React、TypeScript 和 Vite；本地状态、
-预测和评价保存在 SQLite。核心结果不依赖 LangSmith。
+预测和评价保存在 SQLite。运行者自己的 Agent Wiki 默认保存在被 Git 忽略的
+`data/wiki/`；源码中的 `wiki/` 只包含少量 `demo-only` 合成示例。核心结果不依赖
+LangSmith。
 
 公开扩展边界采用 Ports/Adapters：外部来源返回带时间与内容哈希的冻结快照，推理过程
 只能生成受限草案，确定性程序负责校验和持久化。生产数据的许可字段、凭据、私有路径和
@@ -115,7 +117,12 @@ make frontend
 
 打开 `http://localhost:5173`。默认
 `VERICOUNCIL_EXECUTION_PROVIDER=demo`，无需模型密钥。Demo 使用确定性离线生成器验证
-流程和界面，不是智能研究，也不会计入正式成绩。
+流程和界面，不是智能研究，也不会计入正式成绩。若本地 Wiki 尚无条目，Demo 会展示
+源码附带的三个合成示例；Live 永远不会加载这些示例。
+
+个人 Agent、adapter、历史表现和研究 Wiki 都属于本地运行者。Agent 实现应放在独立扩展
+或仓库外可执行 adapter 中，运行数据及 Wiki 留在本地数据库和 `data/wiki/`，不应提交
+到公共项目。
 
 ### 切换市场或标的
 
@@ -251,7 +258,7 @@ make build
 - [Daily Reflection](docs/daily-reflection.md)
 - [可信度治理](docs/believability.md)
 - [可移植审计包](docs/audit-bundle.md)
-- [版本化研究 Wiki](wiki/README.md)
+- [本地 Wiki 与公共示例](wiki/README.md)
 - [部署与安全](docs/secure-deployment.md)
 - [发布与兼容性](docs/releasing.md)
 

@@ -56,11 +56,12 @@ configured `data/` tree:
 - zero or more explicitly named mutable roots, copied without following
   symlinks.
 
-Typical mutable roots are `handoffs`, `reflections`, `market-snapshots`,
-`evidence-snapshots`, `prediction-status`, and `user-wiki`. The published
-framework Wiki is version-controlled and should be recovered from its matching
-Git revision. Read-only upstream source data is not part of a forecast-loop
-backup.
+Typical mutable roots are `wiki`, `handoffs`, `reflections`,
+`reflection-archives`, `lesson-archives`, `market-snapshots`,
+`evidence-snapshots`, `prediction-status`, and `user-wiki`. The
+operator-maintained Agent Wiki and human-readable archives are local data and
+must be backed up explicitly. The repository contains only disposable
+`demo-only` examples and layout documentation.
 
 Each SQLite file is internally consistent even while it is live. For one
 application-consistent recovery point across both databases and file roots,
@@ -73,8 +74,11 @@ Example:
 make recovery-backup ARGS="\
   --database ./runtime-data/forecast-loop.sqlite3 \
   --checkpoint ./runtime-data/checkpoints/langgraph.sqlite3 \
+  --root wiki=./runtime-data/wiki \
   --root handoffs=./runtime-data/handoffs \
   --root reflections=./runtime-data/reflections \
+  --root reflection-archives=./runtime-data/reflection-archives \
+  --root lesson-archives=./runtime-data/lesson-archives \
   --root market-snapshots=./runtime-data/market-snapshots \
   --root evidence-snapshots=./runtime-data/evidence-snapshots \
   --root prediction-status=./runtime-data/prediction-status \

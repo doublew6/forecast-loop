@@ -1,7 +1,8 @@
-# Wiki Proposals
+# Wiki proposal layout example
 
-本目录保存 Codex 或其他本地 AI 生成、但尚未进入正式 Wiki 的 Markdown 修改提案。
-预测运行不得读取或引用这里的内容。
+This public directory documents the proposal layout only. Store real proposals
+under `data/wiki/proposals/` or another configured local Wiki root. Runtime
+predictions never read files below `proposals/`.
 
 每个提案应说明：
 
@@ -12,5 +13,6 @@
 - 对历史预测无回写、对未来预测何时生效；
 - lint、链接、时间与引用校验结果。
 
-提案通过审查后，修改正式条目、更新 `wiki/index.md`，并在 `wiki/log.md` 追加 promote
-记录。不要把提案文件本身改名冒充正式条目。
+After review, update the local Wiki entry and its local `index.md`, then append
+the promotion to the local `log.md`. Do not copy operator proposals into this
+public example directory.

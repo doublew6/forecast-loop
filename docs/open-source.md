@@ -22,11 +22,30 @@ It must not contain or identify:
 - provider credentials, licensed field mappings, production schemas, account or
   order paths, or writable upstream integrations;
 - actual databases, snapshots, checkpoints, handoffs, logs, source maps, or
-  generated local output.
+  generated local output;
+- operator-maintained Agent definitions, prompts, track records, Wiki pages,
+  reflections, lessons, or proposal history.
 
 Public interfaces use neutral concepts such as `provider`, `adapter`,
 `snapshot`, `external source`, and `operator`. Private integrations consume a
 tagged public release; the public repository never depends on them.
+
+## Local ownership
+
+The public source tree is not a synchronization target for an operator's
+accumulated research:
+
+- AgentSpec snapshots, accepted signals, opinions, evaluations, and scorecard
+  evidence remain in the operator's database.
+- Agent Wiki pages, their index, log, and proposals default to the Git-ignored
+  `data/wiki/` tree or another configured local path.
+- Custom Agent implementations and source mappings live in a separate
+  extension or repository-external executable adapter.
+- The checked-in `wiki/` directory contains only synthetic `demo-only`
+  examples. Demo may use them when the local catalog is empty; Live never
+  falls back to them.
+- Human-readable Reflection and Lesson archives default to
+  `data/reflection-archives/` and `data/lesson-archives/`.
 
 ## History policy
 

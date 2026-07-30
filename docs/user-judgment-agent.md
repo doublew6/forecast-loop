@@ -109,7 +109,7 @@ data/user-wiki/
 使用受根目录约束的临时文件、`fsync` 与 exclusive hard link，拒绝 symlink、路径逃逸、
 覆盖和非普通文件；默认目录权限为 `0700`，文件为 `0400`。
 
-它与仓库内正式 `wiki/` 有意分离：
+它与 `data/wiki/` 中的正式 Agent Wiki 有意分离：
 
 - 每日主观看法是 append-only event，不是 evergreen framework；
 - `WikiCatalog` 不会把它冻结进未来预测，避免自证循环；

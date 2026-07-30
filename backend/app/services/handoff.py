@@ -345,7 +345,7 @@ def prepare_handoff(
             settings=settings,
             database=database,
             provider=provider,
-            wiki=WikiCatalog(settings.wiki_path),
+            wiki=WikiCatalog.from_settings(settings),
             evidence_source=evidence_source,
         )
         prepared = workflow.prepare_run(

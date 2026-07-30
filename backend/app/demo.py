@@ -20,7 +20,7 @@ def main() -> None:
     workflow = CommitteeWorkflow(
         settings=settings,
         database=database,
-        wiki=WikiCatalog(settings.wiki_path),
+        wiki=WikiCatalog.from_settings(settings),
     )
     try:
         seed_demo_data(workflow)

@@ -26,8 +26,8 @@ from ..models import (
 )
 
 ARTIFACT_SCHEMA_VERSION = "1.0.0"
-DEFAULT_REFLECTIONS_ROOT = REPOSITORY_ROOT / "reflections"
-DEFAULT_LESSONS_ROOT = REPOSITORY_ROOT / "lessons"
+DEFAULT_REFLECTIONS_ROOT = REPOSITORY_ROOT / "data" / "reflection-archives"
+DEFAULT_LESSONS_ROOT = REPOSITORY_ROOT / "data" / "lesson-archives"
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 

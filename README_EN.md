@@ -105,7 +105,9 @@ read-only sources + versioned Wiki
 
 The backend uses FastAPI, LangChain, and LangGraph. The frontend uses React,
 TypeScript, and Vite. Local state, forecasts, and evaluations are stored in
-SQLite. Core results do not depend on LangSmith.
+SQLite. Operator-maintained Agent Wiki pages default to the Git-ignored
+`data/wiki/` tree; the source-controlled `wiki/` directory contains only a few
+synthetic `demo-only` examples. Core results do not depend on LangSmith.
 
 Public extension points follow a Ports/Adapters design: external sources return
 time-bound, content-hashed frozen snapshots; inference may produce only
@@ -137,7 +139,14 @@ make frontend
 Open `http://localhost:5173`. The default
 `VERICOUNCIL_EXECUTION_PROVIDER=demo` requires no model key. Demo mode uses a
 deterministic offline generator to verify the workflow and UI; it is not
-intelligent research and never enters formal scoring.
+intelligent research and never enters formal scoring. If the local Wiki has no
+entries, Demo displays the three bundled synthetic examples. Live never loads
+those examples.
+
+Personal Agents, adapters, track records, and research Wiki pages belong to the
+operator. Keep implementations in a separate extension or external executable
+adapter, and keep runtime records and Wiki pages in the local database and
+`data/wiki/` rather than committing them to the public project.
 
 ### Change markets or targets
 
@@ -290,7 +299,7 @@ make build
 - [Daily Reflection](docs/daily-reflection.md)
 - [Credibility governance](docs/believability.md)
 - [Portable audit bundle](docs/audit-bundle.md)
-- [Versioned research Wiki](wiki/README.md)
+- [Local Wiki and bundled examples](wiki/README.md)
 - [Deployment and security](docs/secure-deployment.md)
 - [Releasing and compatibility](docs/releasing.md)
 
