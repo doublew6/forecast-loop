@@ -176,6 +176,7 @@ def agent_scorecard(
     market_universe_hash: str,
     model_name: str | None = None,
     forecast_model_version: str | None = None,
+    latest_frozen_partition: bool = False,
 ):
     """Route scorecard storage after resolving capability-driven metrics.
 
@@ -209,4 +210,5 @@ def agent_scorecard(
         market_universe_hash=market_universe_hash,
         model_name=model_name,
         forecast_model_version=forecast_model_version,
+        latest_frozen_partition=latest_frozen_partition,
     )

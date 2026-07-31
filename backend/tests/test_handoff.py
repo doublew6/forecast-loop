@@ -48,6 +48,30 @@ AS_OF = datetime(2026, 7, 13, 15, 0, tzinfo=ZONE)
 PREPARED_AT = datetime(2026, 7, 13, 15, 1, tzinfo=ZONE)
 FINALIZED_AT = datetime(2026, 7, 13, 15, 10, tzinfo=ZONE)
 TEST_OPERATOR_TOKEN = "test-operator-token-0123456789abcdef"
+PRE_UPGRADE_V2_INPUT = (
+    Path(__file__).parent
+    / "fixtures"
+    / "handoff"
+    / "pre-upgrade-v2-input.json"
+)
+PRE_UPGRADE_V2_DATABASE_SEAL = (
+    Path(__file__).parent
+    / "fixtures"
+    / "handoff"
+    / "pre-upgrade-v2-db-seal.json"
+)
+PRE_UPGRADE_CONFIGURABLE_V2_INPUT = (
+    Path(__file__).parent
+    / "fixtures"
+    / "handoff"
+    / "pre-upgrade-v2-configurable-input.json"
+)
+PRE_UPGRADE_CONFIGURABLE_V2_DATABASE_SEAL = (
+    Path(__file__).parent
+    / "fixtures"
+    / "handoff"
+    / "pre-upgrade-v2-configurable-db-seal.json"
+)
 
 
 def _settings(
@@ -419,6 +443,61 @@ def _row_counts(settings: Settings, run_id: str) -> tuple[str, int, int]:
             return row.status, int(opinions or 0), int(forecasts or 0)
     finally:
         database.dispose()
+
+
+def _seed_pre_upgrade_v2_handoff(
+    settings: Settings,
+    *,
+    input_fixture: Path = PRE_UPGRADE_V2_INPUT,
+    database_fixture: Path = PRE_UPGRADE_V2_DATABASE_SEAL,
+) -> tuple[Path, dict[str, Any]]:
+    """Install the frozen pre-upgrade input and its original database seal."""
+
+    input_bytes = input_fixture.read_bytes()
+    request = json.loads(input_bytes)
+    job_dir = settings.handoff_root / request["run_id"]
+    job_dir.mkdir(parents=True, mode=0o700)
+    input_path = job_dir / "input.json"
+    input_path.write_bytes(input_bytes)
+    input_path.chmod(0o400)
+
+    database_seal = json.loads(database_fixture.read_bytes())
+    assert database_seal["run_id"] == request["run_id"]
+    assert database_seal["input_hash"] == request["input_hash"]
+    assert (
+        database_seal["data_quality"]["handoff"]["request_raw_hash"]
+        == hashlib.sha256(input_bytes).hexdigest()
+    )
+    database = Database(settings.database_url)
+    try:
+        with database.session_factory() as session:
+            session.add(
+                WorkflowRun(
+                    id=database_seal["run_id"],
+                    as_of=datetime.fromisoformat(database_seal["as_of"]),
+                    data_cutoff=datetime.fromisoformat(
+                        database_seal["data_cutoff"]
+                    ),
+                    status=database_seal["status"],
+                    mode=database_seal["mode"],
+                    started_at=datetime.fromisoformat(
+                        database_seal["started_at"]
+                    ),
+                    completed_at=None,
+                    duration_seconds=None,
+                    error=None,
+                    data_quality=database_seal["data_quality"],
+                    workflow_steps=database_seal["workflow_steps"],
+                    input_hash=database_seal["input_hash"],
+                    market_universe_hash=database_seal[
+                        "market_universe_hash"
+                    ],
+                )
+            )
+            session.commit()
+    finally:
+        database.dispose()
+    return job_dir, request
 
 
 def _prepare_valid_bundle(tmp_path: Path) -> tuple[Settings, Path, dict[str, Any]]:
@@ -968,13 +1047,7 @@ def test_frozen_v2_package_keeps_dual_horizon_runtime_and_finalizes(
     tmp_path: Path,
 ) -> None:
     settings = _settings(tmp_path)
-    job_dir = prepare_handoff(
-        settings,
-        as_of=AS_OF,
-        now=PREPARED_AT,
-        protocol_version=PREVIOUS_HANDOFF_PROTOCOL_VERSION,
-    )
-    request = _read_request(job_dir)
+    job_dir, request = _seed_pre_upgrade_v2_handoff(settings)
 
     assert request["protocol_version"] == "2.0.0"
     assert request["provider"] == "codex-file-handoff-v2"
@@ -998,34 +1071,21 @@ def test_frozen_v2_configurable_universe_uses_its_known_version_pair(
     tmp_path: Path,
 ) -> None:
     settings = _settings(tmp_path)
-    universe_payload = DEFAULT_MARKET_UNIVERSE.model_dump(
-        mode="json",
-        exclude={"content_hash"},
-    )
-    universe_payload["universe_id"] = "v2-compatible-universe"
-    universe_payload["version"] = "1.0.0"
-    universe_path = tmp_path / "v2-universe.json"
-    universe_path.write_text(
-        json.dumps(universe_payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    settings = settings.model_copy(
-        update={"market_universe_path": universe_path}
-    )
-
-    job_dir = prepare_handoff(
+    job_dir, request = _seed_pre_upgrade_v2_handoff(
         settings,
-        as_of=AS_OF,
-        now=PREPARED_AT,
-        protocol_version=PREVIOUS_HANDOFF_PROTOCOL_VERSION,
+        input_fixture=PRE_UPGRADE_CONFIGURABLE_V2_INPUT,
+        database_fixture=PRE_UPGRADE_CONFIGURABLE_V2_DATABASE_SEAL,
     )
-    request = _read_request(job_dir)
 
+    assert request["protocol_version"] == "2.0.0"
+    assert request["provider"] == "codex-file-handoff-v2"
     assert request["workflow_version"] == "0.4.0"
     assert request["decision_schema_version"] == "0.5.0"
     assert request["initial_state"]["market_universe"]["universe_id"] == (
         "v2-compatible-universe"
     )
+    assert len(request["assignments"]) == 50
+    assert {item["horizon"] for item in request["assignments"]} == {"D1", "D2"}
 
     bundle = _draft_bundle(request)
     _write_drafts(job_dir, bundle)

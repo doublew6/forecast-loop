@@ -235,6 +235,91 @@ def test_source_archive_rejects_private_revision_without_writing_artifact(
     assert not blocked_output.exists()
 
 
+@pytest.mark.parametrize("configuration_source", ["environment", "git"])
+def test_source_archive_rejects_external_private_literal_before_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configuration_source: str,
+) -> None:
+    repository = tmp_path / "source"
+    repository.mkdir()
+    _git(repository, "init", "--initial-branch=main")
+    _git(repository, "config", "user.name", "Release Test")
+    _git(repository, "config", "user.email", "release@example.com")
+    private_literal = "Synthetic" + "OperatorBoundary"
+    patterns = tmp_path / "private-patterns"
+    patterns.write_text(private_literal + "\n", encoding="utf-8")
+    patterns.chmod(0o600)
+    if configuration_source == "environment":
+        monkeypatch.setenv(
+            "FORECAST_LOOP_PRIVATE_BOUNDARY_FILE",
+            str(patterns),
+        )
+    else:
+        _git(
+            repository,
+            "config",
+            "forecastloop.privateBoundaryFile",
+            str(patterns),
+        )
+        _git(
+            repository,
+            "config",
+            "forecastloop.privateBoundaryRequired",
+            "true",
+        )
+    (repository / "release-notes.md").write_text(
+        f"Generic release note for {private_literal}.\n",
+        encoding="utf-8",
+    )
+    _git(repository, "add", "release-notes.md")
+    _git(repository, "commit", "-m", "contaminated fixture")
+
+    output = tmp_path / f"{configuration_source}.tar.gz"
+    with pytest.raises(ReleaseBuildError, match="public-boundary audit") as caught:
+        build_source_archive(
+            repository,
+            output,
+            version="0.1.0",
+            epoch=1767225600,
+            revision="HEAD",
+        )
+
+    assert private_literal not in str(caught.value)
+    assert not output.exists()
+
+
+def test_source_archive_fails_closed_when_private_patterns_are_required(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "source"
+    repository.mkdir()
+    _git(repository, "init", "--initial-branch=main")
+    _git(repository, "config", "user.name", "Release Test")
+    _git(repository, "config", "user.email", "release@example.com")
+    _git(
+        repository,
+        "config",
+        "forecastloop.privateBoundaryRequired",
+        "true",
+    )
+    (repository / "README.md").write_text("release fixture\n", encoding="utf-8")
+    _git(repository, "add", "README.md")
+    _git(repository, "commit", "-m", "release fixture")
+
+    output = tmp_path / "required.tar.gz"
+    with pytest.raises(ReleaseBuildError, match="public-boundary audit"):
+        build_source_archive(
+            repository,
+            output,
+            version="0.1.0",
+            epoch=1767225600,
+            revision="HEAD",
+        )
+
+    assert not output.exists()
+
+
 def test_release_builder_compares_two_builds_and_writes_checksums(
     tmp_path: Path,
 ) -> None:
@@ -256,6 +341,60 @@ def test_release_builder_compares_two_builds_and_writes_checksums(
     for line in lines:
         digest, name = line.split("  ", 1)
         assert digest == hashlib.sha256((output / name).read_bytes()).hexdigest()
+
+
+def test_release_builder_audits_revision_before_invoking_build_callback(
+    tmp_path: Path,
+) -> None:
+    repository = _minimal_repository(tmp_path)
+    private_literal = "Synthetic" + "ReleaseBoundary"
+    patterns = tmp_path / "private-patterns"
+    patterns.write_text(private_literal + "\n", encoding="utf-8")
+    patterns.chmod(0o600)
+    _git(
+        repository,
+        "config",
+        "forecastloop.privateBoundaryFile",
+        str(patterns),
+    )
+    _git(
+        repository,
+        "config",
+        "forecastloop.privateBoundaryRequired",
+        "true",
+    )
+    (repository / "release-notes.md").write_text(
+        f"Generic release note for {private_literal}.\n",
+        encoding="utf-8",
+    )
+    _git(repository, "add", "release-notes.md")
+    _git(repository, "commit", "-m", "contaminated release fixture")
+    callback_called = False
+
+    def forbidden_build_callback(
+        repository: Path,
+        output: Path,
+        version: str,
+        epoch: int,
+        revision: str,
+    ) -> tuple[Path, ...]:
+        del repository, output, version, epoch, revision
+        nonlocal callback_called
+        callback_called = True
+        raise AssertionError("release callback must not run before the audit")
+
+    output = tmp_path / "release"
+    with pytest.raises(ReleaseBuildError, match="public-boundary audit"):
+        build_release_artifacts(
+            repository,
+            output,
+            version="0.1.0",
+            epoch=123,
+            build_once=forbidden_build_callback,
+        )
+
+    assert callback_called is False
+    assert not output.exists()
 
 
 def test_release_build_environment_rejects_inherited_vite_pollution(

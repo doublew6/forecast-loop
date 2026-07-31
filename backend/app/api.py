@@ -310,6 +310,9 @@ def agent_scorecard(
     if agent_id not in AGENT_BY_ID:
         raise HTTPException(status_code=404, detail="Agent not found")
     universe = _current_market_universe(request)
+    historical_partition = (
+        horizon is Horizon.D2 and agent_id != "user_judgment_agent"
+    )
     try:
         return scorecard_facade(
             db,
@@ -320,8 +323,17 @@ def agent_scorecard(
             actor_id=request.app.state.settings.user_judgment_actor_id,
             timezone=request.app.state.settings.timezone,
             market_universe_hash=universe.content_hash,
-            model_name=request.app.state.workflow.model_name_for_agent(agent_id),
-            forecast_model_version=request.app.state.workflow.workflow_version,
+            model_name=(
+                None
+                if historical_partition
+                else request.app.state.workflow.model_name_for_agent(agent_id)
+            ),
+            forecast_model_version=(
+                None
+                if historical_partition
+                else request.app.state.workflow.workflow_version
+            ),
+            latest_frozen_partition=historical_partition,
         )
     except UserJudgmentWikiError as exc:
         raise HTTPException(

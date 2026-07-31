@@ -338,6 +338,15 @@ def _gzip_bytes(body: bytes, output: Path, *, epoch: int) -> None:
             compressed.write(body)
 
 
+def _assert_public_release_revision(repository: Path, revision: str) -> None:
+    try:
+        assert_public_revision(repository, revision)
+    except BoundaryAuditError as exc:
+        raise ReleaseBuildError(
+            "selected revision failed the public-boundary audit"
+        ) from exc
+
+
 def build_source_archive(
     repository: Path,
     output: Path,
@@ -349,12 +358,7 @@ def build_source_archive(
     """Archive exactly the selected Git tree with deterministic gzip metadata."""
 
     commit, _tree = _resolve_revision(repository, revision)
-    try:
-        assert_public_revision(repository, commit)
-    except BoundaryAuditError as exc:
-        raise ReleaseBuildError(
-            "selected revision failed the public-boundary audit"
-        ) from exc
+    _assert_public_release_revision(repository, commit)
     result = _run(
         (
             "git",
@@ -598,6 +602,7 @@ def build_release_artifacts(
 
     root = repository.resolve(strict=True)
     commit, _tree = _resolve_revision(root, revision)
+    _assert_public_release_revision(root, commit)
     source_date_epoch = (
         _git_source_date_epoch(root, commit)
         if epoch is None

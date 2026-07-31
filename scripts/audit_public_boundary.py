@@ -287,18 +287,22 @@ def _revision_candidates(
 
 
 def assert_public_revision(repository: Path, revision: str) -> None:
-    """Reject a Git revision that violates the built-in public-tree policy.
-
-    Release builds intentionally do not load repository-external private
-    literals here. Those remain an operator-side preflight input and never
-    become part of the release process or its output.
-    """
+    """Reject a Git revision that violates the complete public-tree policy."""
 
     root = _safe_repository(repository)
+    private_rules = _load_private_rules(root, None)
+    try:
+        required = private_patterns_required(root)
+    except PrivateBoundaryError as exc:
+        raise BoundaryAuditError(str(exc)) from exc
+    if required and not private_rules:
+        raise BoundaryAuditError(
+            "private-boundary patterns are required but not configured"
+        )
     candidates = _revision_candidates(root, revision)
     counts, _locations, skipped = audit_candidates(
         candidates,
-        private_rules=(),
+        private_rules=private_rules,
     )
     if skipped:
         counts["skipped_file"] += skipped
