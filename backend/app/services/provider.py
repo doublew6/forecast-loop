@@ -17,7 +17,8 @@ from ..schemas import AgentDraft, FrozenEvidenceSnapshot, Probabilities
 from .wiki import WikiCatalog
 
 LEGACY_CODEX_FILE_PROVIDER_NAME = "codex-file-handoff-v1"
-CODEX_FILE_PROVIDER_NAME = "codex-file-handoff-v2"
+PREVIOUS_CODEX_FILE_PROVIDER_NAME = "codex-file-handoff-v2"
+CODEX_FILE_PROVIDER_NAME = "codex-file-handoff-v3"
 
 
 class ResearchProvider(Protocol):

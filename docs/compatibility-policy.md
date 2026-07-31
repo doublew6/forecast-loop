@@ -33,13 +33,16 @@ forecast-loop 使用语义化版本；`0.x` 属于 early release，pre-1.0 公�
 
 ## Historical compatibility
 
-`v0.1.0` 默认写入当前格式，同时保留以下历史读取能力：
+当前开发版本默认写入当前格式，同时保留以下历史读取能力：
 
-- handoff protocol `1.0.0` 和 reflection protocol `1.0.0` 可继续终检与审计；
-- 新 handoff/reflection 包默认使用 protocol `2.0.0`；
+- handoff protocol `1.0.0`、`2.0.0` 和 reflection protocol `1.0.0` 可继续终检与
+  审计；已冻结的 handoff v1/v2 固定使用 D1/D2，不按当前默认重算；
+- 新 handoff 默认使用 protocol `3.0.0` 并只写 D1；新 reflection 包继续使用自己的
+  protocol `2.0.0`；
+- 历史 D2 Forecast 继续支持读取、评价、反省和审计；
 - `vericouncil.user-judgment/v1` 与 `user-judgment/v1` 保持字节级验证；
-- 新 User Judgment 使用 `forecast-loop.user-judgment/v2` 与
-  `user-judgment/v2`；
+- User Judgment v1/v2 继续验证；新记录使用
+  `forecast-loop.user-judgment/v3` 与 `user-judgment/v3`；
 - `vericouncil.*` schema ID、`VERICOUNCIL_*` 环境变量，以及
   `signalrace`、`vericouncil` CLI 名称是历史兼容接口。
 

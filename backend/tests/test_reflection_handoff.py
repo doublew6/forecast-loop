@@ -31,6 +31,7 @@ from app.services.reflection_handoff import (
     freeze_reflection_sources,
     prepare_reflection,
 )
+from app.workflow import CommitteeWorkflow
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
@@ -81,9 +82,25 @@ def _prepare_evaluated_live_run(
     as_of: datetime = AS_OF,
     horizon: Horizon = Horizon.D1,
 ) -> tuple[str, Path, datetime]:
-    response = client.post("/api/runs", json={"as_of": as_of.isoformat()})
-    assert response.status_code == 201, response.text
-    run_id = response.json()["id"]
+    if horizon is Horizon.D2:
+        legacy_settings = client.app.state.settings.model_copy(
+            update={"checkpoint_path": tmp_path / "legacy-reflection-checkpoint.sqlite3"}
+        )
+        legacy_workflow = CommitteeWorkflow(
+            settings=legacy_settings,
+            database=client.app.state.database,
+            provider=client.app.state.workflow.provider,
+            wiki=client.app.state.workflow.wiki,
+            runtime_mode="legacy_dual_horizon",
+        )
+        try:
+            run_id = legacy_workflow.run(as_of=as_of).id
+        finally:
+            legacy_workflow.close()
+    else:
+        response = client.post("/api/runs", json={"as_of": as_of.isoformat()})
+        assert response.status_code == 201, response.text
+        run_id = response.json()["id"]
     database = client.app.state.database
     with database.session_factory() as session:
         run = session.scalar(

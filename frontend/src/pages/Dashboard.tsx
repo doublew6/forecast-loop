@@ -1,12 +1,12 @@
 import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Database, NotebookPen, ShieldCheck } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router'
 
 import { DemoBanner, DirectionBadge, EmptyState, LoadingPanel, PageHeading, QualityBadge } from '../components/Common'
 import { ProbabilityBar } from '../components/Probability'
 import { formatDateTime, percent } from '../lib/format'
 import { useLatestForecasts, useMarketUniverse, useMeeting, usePredictionStatus } from '../lib/api'
-import type { Forecast, Horizon, PredictionDailyState } from '../lib/types'
+import type { Forecast, PredictionDailyState } from '../lib/types'
 
 function ForecastRow({ forecast, meetingHref }: { forecast?: Forecast; meetingHref: string }) {
   if (!forecast) {
@@ -48,7 +48,7 @@ function ForecastRow({ forecast, meetingHref }: { forecast?: Forecast; meetingHr
 }
 
 export function Dashboard() {
-  const [horizon, setHorizon] = useState<Horizon>('D2')
+  const horizon = 'D1'
   const latest = useLatestForecasts()
   const marketUniverse = useMarketUniverse()
   const predictionStatus = usePredictionStatus()
@@ -128,7 +128,7 @@ export function Dashboard() {
       <PageHeading
         eyebrow="预测账本"
         title={todayStatus?.state === 'completed' ? '今日投委会决策' : '最近交易日投委会决策'}
-        description="核对最近一次封签结果、证据状态与今日任务进度。"
+        description="核对下一交易日预测、证据新鲜度与今日任务进度。"
         actions={
           <div className="as-of-block">
             <CalendarDays size={17} />
@@ -161,7 +161,7 @@ export function Dashboard() {
       <section className="overview-strip" aria-label="运行概览">
         <div className="overview-primary">
           <div className={`live-indicator ${todayStatus?.state ?? 'pending'}`}><i /> {liveIndicator}</div>
-          <strong>{horizon === 'D2' ? '未来两交易日' : '下一交易日'}方向预测</strong>
+          <strong>下一交易日方向预测</strong>
           <span>预测只用于研究评估，不构成交易指令</span>
         </div>
         <div className="overview-metric">
@@ -189,19 +189,6 @@ export function Dashboard() {
         <div>
           <span className="eyebrow">封签结果</span>
           <h2 id="forecast-board-heading">标的预测矩阵</h2>
-        </div>
-        <div className="segmented-control" aria-label="预测周期">
-          {(['D1', 'D2'] as Horizon[]).map((item) => (
-            <button
-              key={item}
-              className={horizon === item ? 'active' : ''}
-              aria-pressed={horizon === item}
-              onClick={() => setHorizon(item)}
-            >
-              <strong>{item}</strong>
-              <span>{item === 'D1' ? '下一交易日' : '未来两交易日'}</span>
-            </button>
-          ))}
         </div>
       </div>
 

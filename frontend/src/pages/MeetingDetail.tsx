@@ -75,7 +75,7 @@ export function MeetingDetail() {
     allowDemoFallback: !routeRunId && latest.data?.demo_reason === 'fallback',
   })
   const [indexCode, setIndexCode] = useState<string>('')
-  const [horizon, setHorizon] = useState<Horizon>('D2')
+  const [horizon, setHorizon] = useState<Horizon>('D1')
   const meeting = query.data?.data
   const instruments = useMemo(
     () => [...new Map(
@@ -89,14 +89,36 @@ export function MeetingDetail() {
   const selectedIndexCode = instruments.some((item) => item.code === indexCode)
     ? indexCode
     : instruments[0]?.code ?? indexCode
+  const availableHorizons = useMemo(
+    () => (['D1', 'D2'] as Horizon[]).filter(
+      (item) => meeting?.forecasts.some(
+        (forecast) => (
+          forecast.index_code === selectedIndexCode
+          && forecast.horizon === item
+        ),
+      ),
+    ),
+    [meeting, selectedIndexCode],
+  )
+  const selectedHorizon = availableHorizons.includes(horizon)
+    ? horizon
+    : availableHorizons[0] ?? 'D1'
 
   const finalForecast = meeting?.forecasts.find(
-    (forecast) => forecast.index_code === selectedIndexCode && forecast.horizon === horizon,
+    (forecast) => (
+      forecast.index_code === selectedIndexCode
+      && forecast.horizon === selectedHorizon
+    ),
   )
   const opinions = useMemo(() => {
     if (!meeting) return []
-    return meeting.opinions.filter((item) => item.index_code === selectedIndexCode && item.horizon === horizon)
-  }, [meeting, selectedIndexCode, horizon])
+    return meeting.opinions.filter(
+      (item) => (
+        item.index_code === selectedIndexCode
+        && item.horizon === selectedHorizon
+      ),
+    )
+  }, [meeting, selectedIndexCode, selectedHorizon])
   const activeAgentCount = useMemo(
     () => new Set(meeting?.opinions.filter((item) => item.status === 'active').map((item) => item.agent_id)).size,
     [meeting],
@@ -149,7 +171,8 @@ export function MeetingDetail() {
       <ForecastTargetSelector
         instruments={instruments}
         indexCode={selectedIndexCode}
-        horizon={horizon}
+        horizon={selectedHorizon}
+        horizons={availableHorizons}
         onIndexChange={setIndexCode}
         onHorizonChange={setHorizon}
       />
@@ -159,7 +182,7 @@ export function MeetingDetail() {
           <div className="final-decision-label"><span>CIO 最终决策</span><DirectionBadge direction={finalForecast.direction} /></div>
           <div className="final-decision-body">
             <div className="final-title">
-              <span>{finalForecast.index_name} · {horizon}</span>
+              <span>{finalForecast.index_name} · {selectedHorizon}</span>
               <strong>{percent(finalForecast.confidence)}</strong>
               <small>排除小波动后的方向置信度</small>
             </div>
@@ -189,7 +212,7 @@ export function MeetingDetail() {
                     instrumentCount={instruments.length}
                   />
                 ))
-              : <EmptyState title="该标的暂无委员意见" description={`运行 ${meeting.run.id} 未返回 ${selectedIndexCode} · ${horizon} 的结构化意见。`} />}
+              : <EmptyState title="该标的暂无委员意见" description={`运行 ${meeting.run.id} 未返回 ${selectedIndexCode} · ${selectedHorizon} 的结构化意见。`} />}
           </div>
         </section>
 

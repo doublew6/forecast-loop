@@ -186,12 +186,10 @@ def test_custom_us_index_and_equity_run_end_to_end(tmp_path: Path) -> None:
         latest = client.get("/api/forecasts/latest")
         assert latest.status_code == 200
         forecasts = latest.json()["forecasts"]
-        assert len(forecasts) == 4
+        assert len(forecasts) == 2
         assert {(item["index_code"], item["horizon"]) for item in forecasts} == {
             ("SPX.US", "D1"),
-            ("SPX.US", "D2"),
             ("AAPL.US", "D1"),
-            ("AAPL.US", "D2"),
         }
         assert {item["index_name"] for item in forecasts} == {"S&P 500", "Apple"}
         judgment = client.post(

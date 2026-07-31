@@ -15,6 +15,7 @@ from app.services.run_bundle import (
     _run_payloads,
     verify_run_bundle,
 )
+from app.workflow import CommitteeWorkflow
 
 FIXTURE = (
     Path(__file__).parent
@@ -142,9 +143,10 @@ def test_legacy_v1_agent_hash_projection_is_byte_locked() -> None:
     assert all("content_hash" not in item for item in projection)
 
 
-def test_production_prepare_run_input_hash_is_byte_locked(
+def test_current_and_legacy_prepare_run_input_hashes_are_byte_locked(
     client,
     monkeypatch,
+    tmp_path,
 ) -> None:
     """Exercise the production hash path, not a reimplementation in the test."""
 
@@ -158,11 +160,48 @@ def test_production_prepare_run_input_hash_is_byte_locked(
             17,
             15,
             tzinfo=ZoneInfo("Asia/Shanghai"),
-        )
+        ),
+        persist=False,
     )
 
     assert prepared.row.id == str(fixed_run_id)
     assert prepared.initial["input_hash"] == prepared.row.input_hash
+    assert prepared.initial["forecast_horizons"] == ["D1"]
+    assert prepared.execution_manifest["forecast_horizons"] == ["D1"]
+    assert prepared.execution_manifest["forecast_target_count"] == 5
+    assert prepared.execution_manifest["draft_assignment_count"] == 25
     assert prepared.row.input_hash == (
+        "a5c9a36ee1489047e49aa60f13f9b46d4e88e206831f0d78fda8f7e9a366fef6"
+    )
+
+    legacy_settings = client.app.state.settings.model_copy(
+        update={"checkpoint_path": tmp_path / "legacy-hash-checkpoint.sqlite3"}
+    )
+    legacy_workflow = CommitteeWorkflow(
+        settings=legacy_settings,
+        database=client.app.state.database,
+        provider=client.app.state.workflow.provider,
+        wiki=client.app.state.workflow.wiki,
+        runtime_mode="legacy_dual_horizon",
+    )
+    try:
+        legacy = legacy_workflow.prepare_run(
+            as_of=datetime(
+                2026,
+                7,
+                17,
+                15,
+                tzinfo=ZoneInfo("Asia/Shanghai"),
+            ),
+            persist=False,
+        )
+    finally:
+        legacy_workflow.close()
+
+    assert "forecast_horizons" not in legacy.initial
+    assert legacy.execution_manifest["forecast_horizons"] == ["D1", "D2"]
+    assert legacy.execution_manifest["forecast_target_count"] == 10
+    assert legacy.execution_manifest["draft_assignment_count"] == 50
+    assert legacy.row.input_hash == (
         "5b5be6ae289379f90f8a29262f65bec64b1679bd0f53adf4ef68d4b70ffb68a9"
     )

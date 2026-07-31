@@ -9,7 +9,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -27,6 +27,8 @@ from .db import Database
 from .domain import (
     AGENT_BY_ID,
     AGENTS,
+    LEGACY_PREDICTION_HORIZONS,
+    PREDICTION_HORIZONS,
     Direction,
     Horizon,
     IndexDefinition,
@@ -75,6 +77,7 @@ class CommitteeState(TypedDict, total=False):
     evidence_snapshot: dict[str, Any]
     wiki_snapshot: list[dict[str, Any]]
     market_universe: dict[str, Any]
+    forecast_horizons: list[str]
     believability_snapshot_hash: str
     believability_snapshot_binding_hash: str
     believability_policy_version: str
@@ -94,11 +97,52 @@ EFFECTIVE_RESEARCH_AGENT_IDS = (
 STRATEGY_AGENT_ID = "strategy_agent"
 CRITIC_INPUT_AGENT_IDS = (*EFFECTIVE_RESEARCH_AGENT_IDS, STRATEGY_AGENT_ID)
 DYNAMIC_EVIDENCE_AGENT_IDS = (*EFFECTIVE_RESEARCH_AGENT_IDS, STRATEGY_AGENT_ID)
-WORKFLOW_VERSION = "0.3.0"
-DECISION_SCHEMA_VERSION = "0.4.0"
-CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION = "0.4.0"
-CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION = "0.5.0"
+LEGACY_WORKFLOW_VERSION = "0.3.0"
+LEGACY_DECISION_SCHEMA_VERSION = "0.4.0"
+LEGACY_CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION = "0.4.0"
+LEGACY_CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION = "0.5.0"
+WORKFLOW_VERSION = "0.5.0"
+DECISION_SCHEMA_VERSION = "0.6.0"
+CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION = "0.6.0"
+CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION = "0.7.0"
+WorkflowRuntimeMode = Literal["current", "legacy_dual_horizon"]
 DIRECTIONAL_MASS_HAIRCUT = 0.15
+
+
+def workflow_runtime_versions(
+    *,
+    uses_configurable_universe: bool,
+    runtime_mode: WorkflowRuntimeMode = "current",
+) -> tuple[str, str]:
+    """Return one supported immutable workflow/schema version pair."""
+
+    if runtime_mode == "current":
+        return (
+            (
+                CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION
+                if uses_configurable_universe
+                else WORKFLOW_VERSION
+            ),
+            (
+                CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION
+                if uses_configurable_universe
+                else DECISION_SCHEMA_VERSION
+            ),
+        )
+    if runtime_mode == "legacy_dual_horizon":
+        return (
+            (
+                LEGACY_CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION
+                if uses_configurable_universe
+                else LEGACY_WORKFLOW_VERSION
+            ),
+            (
+                LEGACY_CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION
+                if uses_configurable_universe
+                else LEGACY_DECISION_SCHEMA_VERSION
+            ),
+        )
+    raise ValueError(f"unsupported workflow runtime mode: {runtime_mode}")
 
 
 @dataclass(slots=True)
@@ -106,6 +150,18 @@ class PreparedRun:
     row: WorkflowRun
     initial: CommitteeState
     execution_manifest: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class RunExecutionFence:
+    """One exact durable token that owns a prepared-run execution."""
+
+    data_quality_namespace: str
+    token: str
+
+
+class StaleRunExecutionError(RuntimeError):
+    """A prepared-run executor lost its durable run-state fence."""
 
 
 class CommitteeWorkflow:
@@ -119,6 +175,11 @@ class CommitteeWorkflow:
     uses_configurable_universe = False
     workflow_version = WORKFLOW_VERSION
     decision_schema_version = DECISION_SCHEMA_VERSION
+    # Integrity tests exercise graph nodes without infrastructure. Keep their
+    # historical class fallback dual-horizon while normal instances explicitly
+    # select the current D1-only runtime below.
+    forecast_horizons = LEGACY_PREDICTION_HORIZONS
+    runtime_mode: WorkflowRuntimeMode = "legacy_dual_horizon"
 
     def __init__(
         self,
@@ -129,6 +190,7 @@ class CommitteeWorkflow:
         wiki: WikiCatalog | None = None,
         evidence_source: EvidenceSnapshotSource | None = None,
         universe: MarketUniverseSpec | None = None,
+        runtime_mode: WorkflowRuntimeMode = "current",
     ) -> None:
         self.settings = settings
         self.database = database
@@ -137,23 +199,21 @@ class CommitteeWorkflow:
         self.evidence_source = evidence_source
         self.universe = universe or load_market_universe(settings.market_universe_path)
         if self.universe.timezone != settings.timezone:
-            raise ValueError(
-                "Configured market universe timezone must equal VERICOUNCIL_TIMEZONE"
-            )
+            raise ValueError("Configured market universe timezone must equal VERICOUNCIL_TIMEZONE")
         self.instruments = self.universe.definitions()
         self.uses_configurable_universe = (
             settings.market_universe_path is not None
             or self.universe.content_hash != DEFAULT_MARKET_UNIVERSE.content_hash
         )
-        self.workflow_version = (
-            CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION
-            if self.uses_configurable_universe
-            else WORKFLOW_VERSION
+        self.runtime_mode = runtime_mode
+        self.forecast_horizons = (
+            PREDICTION_HORIZONS if runtime_mode == "current" else LEGACY_PREDICTION_HORIZONS
         )
-        self.decision_schema_version = (
-            CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION
-            if self.uses_configurable_universe
-            else DECISION_SCHEMA_VERSION
+        if any(horizon not in self.universe.horizons for horizon in self.forecast_horizons):
+            raise ValueError("workflow forecast horizons must be supported by the market universe")
+        self.workflow_version, self.decision_schema_version = workflow_runtime_versions(
+            uses_configurable_universe=self.uses_configurable_universe,
+            runtime_mode=runtime_mode,
         )
         self._checkpoint_connection: sqlite3.Connection | None = None
         self.graph = self._build_graph()
@@ -166,18 +226,13 @@ class CommitteeWorkflow:
     def execution_manifest(self) -> dict[str, Any]:
         """Describe every worker-side setting that can change model execution."""
 
-        endpoint = (
-            self.settings.llm_base_url
-            if self.settings.execution_mode == "api"
-            else None
-        )
+        endpoint = self.settings.llm_base_url if self.settings.execution_mode == "api" else None
         return {
             "schema": EXECUTION_MANIFEST_SCHEMA,
             "execution_mode": self.settings.execution_mode,
             "provider": self.provider.name,
             "provider_class": (
-                f"{type(self.provider).__module__}."
-                f"{type(self.provider).__qualname__}"
+                f"{type(self.provider).__module__}.{type(self.provider).__qualname__}"
             ),
             "provider_endpoint_hash": (
                 hashlib.sha256(endpoint.encode("utf-8")).hexdigest()
@@ -191,14 +246,18 @@ class CommitteeWorkflow:
             ),
             "workflow_version": self.workflow_version,
             "decision_schema_version": self.decision_schema_version,
+            "forecast_horizons": [horizon.value for horizon in self.forecast_horizons],
+            "forecast_target_count": (len(self.instruments) * len(self.forecast_horizons)),
+            "draft_assignment_count": (
+                len(self.instruments)
+                * len(self.forecast_horizons)
+                * (len(EFFECTIVE_RESEARCH_AGENT_IDS) + 2)
+            ),
             "timezone": self.settings.timezone,
             "market_universe_hash": self.universe.content_hash,
             "llm_timeout_seconds": self.settings.llm_timeout_seconds,
             "llm_max_retries": self.settings.llm_max_retries,
-            "agent_models": {
-                agent.id: self._model_name_for_agent(agent.id)
-                for agent in AGENTS
-            },
+            "agent_models": {agent.id: self._model_name_for_agent(agent.id) for agent in AGENTS},
         }
 
     def run(self, *, as_of: datetime | None = None) -> WorkflowRun:
@@ -220,9 +279,7 @@ class CommitteeWorkflow:
             raise ValueError("initial run status must be queued or awaiting_draft")
 
         as_of = self._normalize_as_of(as_of)
-        frozen_external_inputs = _freeze_external_input_bindings(
-            external_input_bindings
-        )
+        frozen_external_inputs = _freeze_external_input_bindings(external_input_bindings)
         evidence_snapshot = load_evidence_snapshot(
             self.settings,
             as_of=as_of,
@@ -231,11 +288,7 @@ class CommitteeWorkflow:
         )
         frozen_wiki = self.wiki.freeze(
             allow_demo_fallback=self.settings.use_demo_provider,
-            cutoff=(
-                None
-                if self.settings.use_demo_provider
-                else evidence_snapshot.data_cutoff
-            ),
+            cutoff=(None if self.settings.use_demo_provider else evidence_snapshot.data_cutoff),
         )
         run_id = str(uuid4())
         started_at = datetime.now(ZoneInfo(self.settings.timezone))
@@ -249,12 +302,10 @@ class CommitteeWorkflow:
                 data_cutoff=evidence_snapshot.data_cutoff,
                 agent_scopes=self._believability_agent_scopes(),
                 index_codes=self.universe.codes,
-                horizons=tuple(horizon.value for horizon in self.universe.horizons),
+                horizons=tuple(horizon.value for horizon in self.forecast_horizons),
                 market_universe_hash=self.universe.content_hash,
                 required_live_target_dates=self.settings.reflection_shadow_target_dates,
-                required_approved_reflections=(
-                    self.settings.reflection_required_human_reviews
-                ),
+                required_approved_reflections=(self.settings.reflection_required_human_reviews),
             )
             believability_binding_hash = believability_run_binding_hash(
                 run_id,
@@ -267,19 +318,13 @@ class CommitteeWorkflow:
                         entry.id,
                         entry.version,
                         entry.content_hash,
-                        (
-                            None
-                            if entry.published_at is None
-                            else entry.published_at.isoformat()
-                        ),
+                        (None if entry.published_at is None else entry.published_at.isoformat()),
                     )
                     for entry in wiki_entries
                 ],
                 "provider": self.provider.name,
                 "provider_endpoint": (
-                    self.settings.llm_base_url
-                    if self.settings.execution_mode == "api"
-                    else None
+                    self.settings.llm_base_url if self.settings.execution_mode == "api" else None
                 ),
                 "prompt_version": getattr(
                     self.provider,
@@ -289,10 +334,7 @@ class CommitteeWorkflow:
                 "workflow_version": self.workflow_version,
                 "decision_schema_version": self.decision_schema_version,
                 "agents": legacy_v1_agent_hash_projection(
-                    {
-                        agent.id: self._model_name_for_agent(agent.id)
-                        for agent in AGENTS
-                    }
+                    {agent.id: self._model_name_for_agent(agent.id) for agent in AGENTS}
                 ),
                 "aggregation": {
                     "effective_research_agents": EFFECTIVE_RESEARCH_AGENT_IDS,
@@ -315,6 +357,10 @@ class CommitteeWorkflow:
                     "version": self.universe.version,
                     "content_hash": self.universe.content_hash,
                 }
+            if self.runtime_mode == "current":
+                hash_payload["forecast_horizons"] = [
+                    horizon.value for horizon in self.forecast_horizons
+                ]
             if frozen_external_inputs:
                 hash_payload["external_input_bindings"] = frozen_external_inputs
             input_hash = hashlib.sha256(
@@ -331,9 +377,7 @@ class CommitteeWorkflow:
                 duration_seconds=None,
                 error=None,
                 data_quality={
-                    "believability_snapshot": believability_snapshot.model_dump(
-                        mode="json"
-                    ),
+                    "believability_snapshot": believability_snapshot.model_dump(mode="json"),
                     # Persist this seal before execution so awaiting file handoffs
                     # can be selected idempotently after a process restarts with a
                     # different configured universe.
@@ -377,6 +421,8 @@ class CommitteeWorkflow:
             initial["external_input_bindings"] = frozen_external_inputs
         if self.uses_configurable_universe:
             initial["market_universe"] = self.universe.model_dump(mode="json")
+        if self.runtime_mode == "current":
+            initial["forecast_horizons"] = [horizon.value for horizon in self.forecast_horizons]
         return PreparedRun(
             row=row,
             initial=initial,
@@ -389,9 +435,11 @@ class CommitteeWorkflow:
         *,
         raise_errors: bool = True,
         execution_fence: ExecutionFence | None = None,
+        run_execution_fence: RunExecutionFence | None = None,
         allow_recovery: bool = False,
         retryable_failure: bool = False,
         checkpoint_thread_id: str | None = None,
+        execution_time: datetime | None = None,
     ) -> WorkflowRun:
         """Execute a previously frozen run, persisting success or failure."""
 
@@ -404,7 +452,7 @@ class CommitteeWorkflow:
         recovering = allow_recovery and expected_status == RunStatus.RUNNING.value
         if expected_status not in initial_statuses and not recovering:
             raise RuntimeError(f"run {run_id} cannot execute from status {expected_status}")
-        started_at = datetime.now(ZoneInfo(self.settings.timezone))
+        started_at = execution_time or datetime.now(ZoneInfo(self.settings.timezone))
         with self.database.session_factory() as session:
             persistent = session.get(WorkflowRun, run_id)
             if persistent is None:
@@ -418,11 +466,11 @@ class CommitteeWorkflow:
             if persistent.status != expected_status:
                 raise RuntimeError(f"run {run_id} was already claimed or finalized")
             try:
+                self._validate_forecast_horizons_state(prepared.initial)
                 self._validate_market_universe_state(prepared.initial)
                 if persistent.market_universe_hash != self.universe.content_hash:
                     raise RuntimeError(
-                        "prepared run market universe hash no longer matches "
-                        "the database seal"
+                        "prepared run market universe hash no longer matches the database seal"
                     )
                 self._validate_believability_seal(
                     persistent,
@@ -436,7 +484,7 @@ class CommitteeWorkflow:
                         "prepared run input hash no longer matches the database seal"
                     )
             except Exception as exc:
-                failed_at = datetime.now(ZoneInfo(self.settings.timezone))
+                failed_at = execution_time or datetime.now(ZoneInfo(self.settings.timezone))
                 failure_values = self._failure_values(
                     exc,
                     started_at=started_at,
@@ -448,8 +496,10 @@ class CommitteeWorkflow:
                     .where(
                         WorkflowRun.id == run_id,
                         WorkflowRun.status == expected_status,
+                        *self._run_execution_fence_predicates(run_execution_fence),
                     )
                     .values(**failure_values)
+                    .execution_options(synchronize_session=False)
                 )
                 if marked.rowcount == 1:
                     session.commit()
@@ -458,6 +508,10 @@ class CommitteeWorkflow:
                         return persistent
                 else:  # pragma: no cover - requires a concurrent claimant
                     session.rollback()
+                    if run_execution_fence is not None:
+                        raise StaleRunExecutionError(
+                            f"run {run_id} execution fence is stale"
+                        ) from exc
                 raise
             if not recovering:
                 claimed = session.execute(
@@ -465,14 +519,18 @@ class CommitteeWorkflow:
                     .where(
                         WorkflowRun.id == run_id,
                         WorkflowRun.status == expected_status,
+                        *self._run_execution_fence_predicates(run_execution_fence),
                     )
                     .values(
                         status=RunStatus.RUNNING.value,
                         started_at=started_at,
                     )
+                    .execution_options(synchronize_session=False)
                 )
                 if claimed.rowcount != 1:
                     session.rollback()
+                    if run_execution_fence is not None:
+                        raise StaleRunExecutionError(f"run {run_id} execution fence is stale")
                     raise RuntimeError(f"run {run_id} was already claimed or finalized")
             session.commit()
         try:
@@ -484,7 +542,7 @@ class CommitteeWorkflow:
                     }
                 },
             )
-            completed_at = datetime.now(ZoneInfo(self.settings.timezone))
+            completed_at = execution_time or datetime.now(ZoneInfo(self.settings.timezone))
             with self.database.session_factory() as session:
                 persistent = session.get(WorkflowRun, run_id)
                 assert persistent is not None
@@ -493,8 +551,22 @@ class CommitteeWorkflow:
                     execution_fence,
                     run_id=run_id,
                 )
-                if persistent.status != RunStatus.RUNNING.value:
+                fenced = session.execute(
+                    update(WorkflowRun)
+                    .where(
+                        WorkflowRun.id == run_id,
+                        WorkflowRun.status == RunStatus.RUNNING.value,
+                        *self._run_execution_fence_predicates(run_execution_fence),
+                    )
+                    .values(status=RunStatus.RUNNING.value)
+                    .execution_options(synchronize_session=False)
+                )
+                if fenced.rowcount != 1:
+                    session.rollback()
+                    if run_execution_fence is not None:
+                        raise StaleRunExecutionError(f"run {run_id} execution fence is stale")
                     raise RuntimeError(f"run {run_id} changed status during workflow execution")
+                session.refresh(persistent, attribute_names=["data_quality"])
                 self._validate_believability_seal(
                     persistent,
                     prepared.initial,
@@ -522,10 +594,10 @@ class CommitteeWorkflow:
                 session.commit()
                 session.refresh(persistent)
                 return persistent
-        except StaleTaskLeaseError:
+        except (StaleRunExecutionError, StaleTaskLeaseError):
             raise
         except Exception as exc:
-            completed_at = datetime.now(ZoneInfo(self.settings.timezone))
+            completed_at = execution_time or datetime.now(ZoneInfo(self.settings.timezone))
             with self.database.session_factory() as session:
                 failed = session.get(WorkflowRun, run_id)
                 assert failed is not None
@@ -541,13 +613,35 @@ class CommitteeWorkflow:
                     completed_at=completed_at,
                     retryable=retryable_failure,
                 )
-                for key, value in values.items():
-                    setattr(failed, key, value)
+                marked = session.execute(
+                    update(WorkflowRun)
+                    .where(
+                        WorkflowRun.id == run_id,
+                        WorkflowRun.status == RunStatus.RUNNING.value,
+                        *self._run_execution_fence_predicates(run_execution_fence),
+                    )
+                    .values(**values)
+                    .execution_options(synchronize_session=False)
+                )
+                if marked.rowcount != 1:
+                    session.rollback()
+                    raise StaleRunExecutionError(f"run {run_id} execution fence is stale") from exc
                 session.commit()
                 session.refresh(failed)
                 if not raise_errors:
                     return failed
             raise
+
+    @staticmethod
+    def _run_execution_fence_predicates(
+        fence: RunExecutionFence | None,
+    ) -> tuple[Any, ...]:
+        if fence is None:
+            return ()
+        return (
+            WorkflowRun.data_quality[fence.data_quality_namespace]["execution_token"].as_string()
+            == fence.token,
+        )
 
     def _fence_task_execution(
         self,
@@ -695,7 +789,7 @@ class CommitteeWorkflow:
             wiki = _frozen_wiki(state)
             additions: list[dict[str, Any]] = []
             for index in self.instruments:
-                for horizon in self.universe.horizons:
+                for horizon in self.forecast_horizons:
                     draft = self.provider.research(
                         agent_id=agent_id,
                         index=index,
@@ -773,7 +867,7 @@ class CommitteeWorkflow:
         wiki = _frozen_wiki(state)
         additions: list[dict[str, Any]] = []
         for index in self.instruments:
-            for horizon in self.universe.horizons:
+            for horizon in self.forecast_horizons:
                 research_opinions = [
                     opinion
                     for opinion in state.get("opinions", [])
@@ -930,7 +1024,11 @@ class CommitteeWorkflow:
                         "raw_response": raw_response,
                     }
                 )
-        _annotate_strategy_context(additions, instruments=self.instruments)
+        _annotate_strategy_context(
+            additions,
+            instruments=self.instruments,
+            horizons=self.forecast_horizons,
+        )
         return {
             "opinions": additions,
             "workflow_steps": [_step(agent.id, agent.name, started)],
@@ -944,7 +1042,7 @@ class CommitteeWorkflow:
         wiki = _frozen_wiki(state)
         additions: list[dict[str, Any]] = []
         for index in self.instruments:
-            for horizon in self.universe.horizons:
+            for horizon in self.forecast_horizons:
                 research_opinions = [
                     opinion
                     for opinion in state.get("opinions", [])
@@ -1095,7 +1193,7 @@ class CommitteeWorkflow:
         forecasts: list[dict[str, Any]] = []
         cio_opinions: list[dict[str, Any]] = []
         for index in self.instruments:
-            for horizon in self.universe.horizons:
+            for horizon in self.forecast_horizons:
                 research_inputs = [
                     opinion
                     for opinion in state.get("opinions", [])
@@ -1138,8 +1236,7 @@ class CommitteeWorkflow:
                 )
                 quant_context = (
                     "Quant 待接入且权重为0"
-                    if "quant_agent"
-                    not in state.get("external_input_bindings", {})
+                    if "quant_agent" not in state.get("external_input_bindings", {})
                     else "Quant 已作为只读 shadow 输入，正式决策权重为0"
                 )
                 citations = _deduplicate_citations(
@@ -1311,6 +1408,21 @@ class CommitteeWorkflow:
                 "prepared run market universe no longer matches the runtime configuration"
             )
 
+    def _validate_forecast_horizons_state(self, state: CommitteeState) -> None:
+        raw = state.get("forecast_horizons")
+        if raw is None:
+            if self.runtime_mode != "legacy_dual_horizon":
+                raise RuntimeError("prepared run is missing its forecast horizon seal")
+            return
+        try:
+            frozen = tuple(Horizon(value) for value in raw)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("prepared run forecast horizon seal is invalid") from exc
+        if frozen != self.forecast_horizons:
+            raise RuntimeError(
+                "prepared run forecast horizons no longer match the runtime contract"
+            )
+
     def model_name_for_agent(self, agent_id: str) -> str:
         """Return the exact model identity used by the current agent version."""
 
@@ -1394,8 +1506,7 @@ class CommitteeWorkflow:
         if value is None:
             now = datetime.now(timezone)
             close_hour, close_minute = (
-                int(part)
-                for part in self.universe.session_close.split(":", maxsplit=1)
+                int(part) for part in self.universe.session_close.split(":", maxsplit=1)
             )
             return now.replace(
                 hour=close_hour,
@@ -1517,6 +1628,7 @@ def _annotate_strategy_context(
     opinions: list[dict[str, Any]],
     *,
     instruments: tuple[IndexDefinition, ...],
+    horizons: tuple[Horizon, ...] = LEGACY_PREDICTION_HORIZONS,
 ) -> None:
     """Derive one coherent cross-instrument allocation view for each horizon.
 
@@ -1524,24 +1636,18 @@ def _annotate_strategy_context(
     rather than a hard-coded A-share symbol list.
     """
 
-    index_position = {
-        instrument.code: position for position, instrument in enumerate(instruments)
-    }
-    bucket_by_code = {
-        instrument.code: instrument.strategy_bucket for instrument in instruments
-    }
+    index_position = {instrument.code: position for position, instrument in enumerate(instruments)}
+    bucket_by_code = {instrument.code: instrument.strategy_bucket for instrument in instruments}
     scope_label = (
         "五指数"
-        if tuple(instrument.code for instrument in instruments)
-        == DEFAULT_MARKET_UNIVERSE.codes
+        if tuple(instrument.code for instrument in instruments) == DEFAULT_MARKET_UNIVERSE.codes
         else f"{len(instruments)} 个标的"
     )
-    for horizon in Horizon:
+    for horizon in horizons:
         rows = [item for item in opinions if item["horizon"] == horizon.value]
         if len(rows) != len(instruments):
             raise ValueError(
-                f"strategy context requires {len(instruments)} instruments "
-                f"for {horizon.value}"
+                f"strategy context requires {len(instruments)} instruments for {horizon.value}"
             )
         by_index = {item["index_code"]: item for item in rows}
         if set(by_index) != set(index_position):
@@ -1575,8 +1681,7 @@ def _annotate_strategy_context(
             if bucket != "balanced":
                 bucket_values.setdefault(bucket, []).append(score)
         style_scores = {
-            bucket: sum(values) / len(values)
-            for bucket, values in bucket_values.items()
+            bucket: sum(values) / len(values) for bucket, values in bucket_values.items()
         }
         ordered_styles = sorted(
             style_scores,

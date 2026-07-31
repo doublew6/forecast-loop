@@ -349,7 +349,7 @@ def test_worker_executes_a_persisted_prepared_run(client) -> None:
         assert persisted_task.attempt_count == 1
         assert persisted_run.status == "completed"
         assert persisted_run.error is None
-        assert len(persisted_run.forecasts) == 10
+        assert len(persisted_run.forecasts) == 5
 
 
 def test_worker_fails_closed_when_execution_settings_drift(
@@ -430,7 +430,7 @@ def test_retry_replays_frozen_input_in_an_isolated_checkpoint(
         assert persisted_run is not None
         assert persisted_task.attempt_count == 2
         assert persisted_run.status == "completed"
-        assert len(persisted_run.forecasts) == 10
+        assert len(persisted_run.forecasts) == 5
 
 
 def test_run_api_exposes_persistent_queue_state(client) -> None:

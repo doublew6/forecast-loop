@@ -13,11 +13,11 @@ from app.config import Settings
 from app.db import Database
 from app.main import create_app
 from app.market_universe import DEFAULT_MARKET_UNIVERSE
-from app.models import Forecast, WorkflowRun, WorkflowTask
+from app.models import AgentOpinion, Forecast, WorkflowRun, WorkflowTask
 from app.services.prediction_status import write_prediction_prepare_receipt
 from app.services.reflection import MarketSnapshotFact, materialize_evaluation_batch
 from app.services.task_queue import EXECUTION_MANIFEST_SCHEMA
-from app.workflow import PreparedRun
+from app.workflow import CommitteeWorkflow, PreparedRun
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
@@ -215,23 +215,22 @@ def test_committee_run_latest_detail_and_meeting(client: TestClient) -> None:
     assert latest["run_id"] == run["id"]
     assert latest["as_of"].endswith("+08:00")
     assert latest["data_cutoff"].endswith("+08:00")
-    assert len(latest["forecasts"]) == 10
-    assert {item["horizon"] for item in latest["forecasts"]} == {"D1", "D2"}
+    assert len(latest["forecasts"]) == 5
+    assert {item["horizon"] for item in latest["forecasts"]} == {"D1"}
     assert {item["direction"] for item in latest["forecasts"]} <= {"up", "down"}
     assert all(not item["abstain"] for item in latest["forecasts"])
     assert all(abs(sum(item["probabilities"].values()) - 1) < 1e-6 for item in latest["forecasts"])
     assert all(item["citations"] for item in latest["forecasts"])
 
-    filtered = client.get("/api/forecasts/latest?horizon=D2").json()["forecasts"]
-    assert len(filtered) == 5
+    assert client.get("/api/forecasts/latest?horizon=D2").status_code == 404
     forecast = latest["forecasts"][0]
     assert client.get(f"/api/forecasts/{forecast['id']}").json()["id"] == forecast["id"]
 
     meeting = client.get(f"/api/meetings/{run['id']}")
     assert meeting.status_code == 200
     body = meeting.json()
-    assert len(body["opinions"]) == 60
-    assert len(body["forecasts"]) == 10
+    assert len(body["opinions"]) == 30
+    assert len(body["forecasts"]) == 5
     assert {step["id"] for step in body["workflow_steps"]} >= {
         "freeze_snapshot",
         "macro_policy_agent",
@@ -245,10 +244,10 @@ def test_committee_run_latest_detail_and_meeting(client: TestClient) -> None:
     assert not [item for item in body["opinions"] if item["agent_id"] == "quant_agent"]
     assert {item["direction"] for item in body["opinions"]} <= {"up", "down"}
     strategies = [item for item in body["opinions"] if item["agent_id"] == "strategy_agent"]
-    assert len(strategies) == 10
+    assert len(strategies) == 5
     assert all(item["weight"] == 1 for item in strategies)
     assert all(item["citations"] for item in strategies)
-    for horizon in ("D1", "D2"):
+    for horizon in ("D1",):
         contexts = [
             item["strategy_context"] for item in strategies if item["horizon"] == horizon
         ]
@@ -264,6 +263,210 @@ def test_committee_run_latest_detail_and_meeting(client: TestClient) -> None:
     critics = [item for item in body["opinions"] if item["agent_id"] == "risk_critic_agent"]
     assert all("反证检查" in item["summary"] for item in critics)
     assert {item["direction"] for item in critics} <= {"up", "down"}
+
+
+def test_latest_horizon_query_reads_the_newest_matching_historical_run(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    legacy_settings = client.app.state.settings.model_copy(
+        update={"checkpoint_path": tmp_path / "legacy-d2-checkpoint.sqlite3"}
+    )
+    legacy_workflow = CommitteeWorkflow(
+        settings=legacy_settings,
+        database=client.app.state.database,
+        provider=client.app.state.workflow.provider,
+        wiki=client.app.state.workflow.wiki,
+        runtime_mode="legacy_dual_horizon",
+    )
+    try:
+        legacy_run = legacy_workflow.run(
+            as_of=datetime.fromisoformat("2026-07-09T15:00:00+08:00")
+        )
+    finally:
+        legacy_workflow.close()
+
+    current_run = _create_run(client)
+
+    latest_d1 = client.get("/api/forecasts/latest?horizon=D1")
+    assert latest_d1.status_code == 200
+    assert latest_d1.json()["run_id"] == current_run["id"]
+    assert {item["horizon"] for item in latest_d1.json()["forecasts"]} == {"D1"}
+
+    latest_d2 = client.get("/api/forecasts/latest?horizon=D2")
+    assert latest_d2.status_code == 200
+    assert latest_d2.json()["run_id"] == legacy_run.id
+    assert {item["horizon"] for item in latest_d2.json()["forecasts"]} == {"D2"}
+
+    historical_meeting = client.get(f"/api/meetings/{legacy_run.id}")
+    assert historical_meeting.status_code == 200
+    assert {
+        item["horizon"] for item in historical_meeting.json()["forecasts"]
+    } == {"D1", "D2"}
+
+
+def test_historical_d2_scorecard_uses_its_latest_frozen_identity_partition(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    legacy_settings = client.app.state.settings.model_copy(
+        update={"checkpoint_path": tmp_path / "legacy-d2-scorecard.sqlite3"}
+    )
+    legacy_workflow = CommitteeWorkflow(
+        settings=legacy_settings,
+        database=client.app.state.database,
+        provider=client.app.state.workflow.provider,
+        wiki=client.app.state.workflow.wiki,
+        runtime_mode="legacy_dual_horizon",
+    )
+    try:
+        older_legacy_run = legacy_workflow.run(
+            as_of=datetime.fromisoformat("2026-07-08T15:00:00+08:00")
+        )
+        legacy_run = legacy_workflow.run(
+            as_of=datetime.fromisoformat("2026-07-09T15:00:00+08:00")
+        )
+    finally:
+        legacy_workflow.close()
+
+    _create_run(client)
+    partition_specs = (
+        (
+            older_legacy_run,
+            "0.1.0",
+            "codex-file-handoff-v1",
+            "0.2.0",
+        ),
+        (
+            legacy_run,
+            "0.1.1",
+            "codex-file-handoff-v2",
+            "0.3.0",
+        ),
+    )
+    forecast_ids = []
+    with client.app.state.database.session_factory() as session:
+        for run, agent_version, model_name, forecast_model_version in partition_specs:
+            row = session.scalar(
+                select(Forecast)
+                .where(
+                    Forecast.run_id == run.id,
+                    Forecast.horizon == "D2",
+                )
+                .order_by(Forecast.index_code)
+            )
+            assert row is not None
+            row.run.mode = "live"
+            row.model_version = forecast_model_version
+            opinion = session.scalar(
+                select(AgentOpinion).where(
+                    AgentOpinion.run_id == run.id,
+                    AgentOpinion.agent_id == "macro_policy_agent",
+                    AgentOpinion.index_code == row.index_code,
+                    AgentOpinion.horizon == "D2",
+                )
+            )
+            assert opinion is not None
+            opinion.agent_version = agent_version
+            opinion.model_name = model_name
+            forecast_ids.append(row.id)
+        session.commit()
+
+    historical_forecasts = [
+        client.get(f"/api/forecasts/{forecast_id}").json()
+        for forecast_id in forecast_ids
+    ]
+    _enable_live_http(client)
+    start_close = 100.0
+    evaluated = client.post(
+        "/api/evaluations/run",
+        json={
+            "observations": [
+                {
+                    "forecast_id": forecast["id"],
+                    "price_source": "test",
+                    "observed_at": (
+                        f"{forecast['target_date']}T15:10:00+08:00"
+                    ),
+                    "start": {
+                        "trade_date": forecast["base_trade_date"],
+                        "close": start_close,
+                        "source_url": (
+                            f"https://www.csindex.com.cn/d2-start-{position}"
+                        ),
+                        "source_hash": hashlib.sha256(
+                            f"d2-start-{position}".encode()
+                        ).hexdigest(),
+                    },
+                    "end": {
+                        "trade_date": forecast["target_date"],
+                        "close": start_close * (1 + forecast["threshold"] + 0.01),
+                        "source_url": (
+                            f"https://www.csindex.com.cn/d2-end-{position}"
+                        ),
+                        "source_hash": hashlib.sha256(
+                            f"d2-end-{position}".encode()
+                        ).hexdigest(),
+                    },
+                }
+                for position, forecast in enumerate(historical_forecasts)
+            ]
+        },
+        headers=OPERATOR_HEADERS,
+    )
+    assert evaluated.status_code == 200, evaluated.text
+
+    for position, forecast in enumerate(historical_forecasts):
+        captured_at = datetime.fromisoformat(
+            f"{forecast['target_date']}T15:10:00+08:00"
+        )
+        with client.app.state.database.session_factory() as session:
+            row = session.get(Forecast, forecast["id"])
+            assert row is not None
+            assert row.evaluation is not None
+            materialize_evaluation_batch(
+                session,
+                target_date=row.target_date,
+                horizon=row.horizon,
+                snapshots=[
+                    MarketSnapshotFact(
+                        index_code=row.index_code,
+                        index_name=row.index_name,
+                        target_date=row.target_date,
+                        base_trade_date=row.base_trade_date,
+                        base_close=row.evaluation.start_close,
+                        target_close=row.evaluation.end_close,
+                        actual_return=row.evaluation.actual_return,
+                        source_url=(
+                            f"https://www.csindex.com.cn/d2-close-{position}"
+                        ),
+                        source_hash=hashlib.sha256(
+                            f"d2-batch-{position}".encode()
+                        ).hexdigest(),
+                        captured_at=captured_at,
+                        advancers=3_100,
+                        decliners=2_200,
+                        unchanged=100,
+                        limit_down_count=2,
+                        breadth_down_ratio=2_200 / 5_400,
+                        historical_abs_return_percentile=0.8,
+                        history_sample_size=300,
+                    )
+                ],
+                source_hash=hashlib.sha256(
+                    f"d2-evaluation-batch-{position}".encode()
+                ).hexdigest(),
+                now=captured_at,
+            )
+            session.commit()
+
+    scorecard = client.get(
+        "/api/agents/macro_policy_agent/scorecard?horizon=D2"
+    )
+    assert scorecard.status_code == 200
+    assert scorecard.json()["sample_size"] == 1
+    assert scorecard.json()["model_name"] == "codex-file-handoff-v2"
+    assert scorecard.json()["agent_version"] == "0.1.1"
 
 
 def test_evaluation_and_scorecards(client: TestClient) -> None:
@@ -521,11 +724,11 @@ def test_wiki_and_run_listing(client: TestClient) -> None:
     run = _create_run(client)
     runs = client.get("/api/runs").json()["items"]
     assert runs[0]["id"] == run["id"]
-    assert runs[0]["forecasts_count"] == 10
+    assert runs[0]["forecasts_count"] == 5
     wiki = client.get("/api/wiki").json()["items"]
     assert wiki
     entry = wiki[0]
-    assert entry["referenced_by_count"] == 10
+    assert entry["referenced_by_count"] == 5
     detail = client.get(f"/api/wiki/{entry['id']}")
     assert detail.status_code == 200
     assert detail.json()["body"]

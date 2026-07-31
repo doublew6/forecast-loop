@@ -253,7 +253,7 @@ export function UserJudgments() {
     mutationKey: ['user-judgments', 'create'],
   }) > 0
   const [indexCode, setIndexCode] = useState('')
-  const [horizon, setHorizon] = useState<Horizon>('D2')
+  const [horizon, setHorizon] = useState<Horizon>('D1')
   const targets = targetsQuery.data?.data ?? EMPTY_TARGETS
   const history = historyQuery.data?.data ?? []
   const instruments = [...new Map(
@@ -265,6 +265,9 @@ export function UserJudgments() {
   const availableIndexCodes = new Set(targets.map((item) => item.index_code))
   const availableTargets = new Set(
     targets.map((item) => `${item.index_code}:${item.horizon}`),
+  )
+  const availableHorizons = (['D1', 'D2'] as Horizon[]).filter(
+    (item) => targets.some((target) => target.horizon === item),
   )
   const selected = targets.find(
     (item) => item.index_code === indexCode && item.horizon === horizon,
@@ -312,6 +315,7 @@ export function UserJudgments() {
             instruments={instruments}
             indexCode={selectedIndexCode}
             horizon={selectedHorizon}
+            horizons={availableHorizons}
             onIndexChange={(nextIndexCode) => {
               setIndexCode(nextIndexCode)
               if (!availableTargets.has(`${nextIndexCode}:${selectedHorizon}`)) {

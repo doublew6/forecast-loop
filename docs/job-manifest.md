@@ -22,7 +22,9 @@ forecast-loop 使用兼容 schema `vericouncil.job/v1` 的 JSON 文件把任务�
 
 `vericouncil.job/v1` 是兼容 schema ID。新的示例 Manifest 使用
 `prompts/daily-forecast-v2.md`；运行方为自己的调度器选择独立服务 ID，公共契约不规定
-机器、任务名称或执行时间。
+机器、任务名称或执行时间。这里的 `v2` 是独立的 prompt 内容版本，不等于 handoff
+protocol；当前 prepare 仍会生成 D1-only handoff v3。示例中的 cron 仅用于验证五字段
+schema，不是推荐或生产日程。
 
 两步必须显式声明 `--mode demo|live`，finalize 必须以 `{job_dir}` 结尾；它是 runner
 在 prepare 成功后替换的唯一显式参数。核心 parser 会拒绝任意可执行文件、`env sh -c`、

@@ -23,6 +23,7 @@ from app.services.handoff import (
     build_handoff_draft_template,
     render_handoff_instructions,
 )
+from pydantic import ValidationError
 
 NOW = datetime(2026, 7, 24, 10, 30, tzinfo=UTC)
 
@@ -112,7 +113,7 @@ def _assignments() -> list[dict[str, Any]]:
     )
     for agent_id, role in agents:
         for index in ("000001", "000016", "000300", "000905", "399006"):
-            for horizon in ("D1", "D2"):
+            for horizon in ("D1",):
                 assignments.append(
                     {
                         "agent_id": agent_id,
@@ -130,7 +131,7 @@ def _assignments() -> list[dict[str, Any]]:
                         "allowed_evidence_item_ids": [],
                     }
                 )
-    assert len(assignments) == 50
+    assert len(assignments) == 25
     return assignments
 
 
@@ -143,9 +144,9 @@ def _prepared_handoff(project: Path) -> tuple[Path, HandoffRequest]:
         prepared_at=NOW,
         finalize_deadline=NOW + timedelta(hours=2),
         input_hash="b" * 64,
-        workflow_version="test",
-        decision_schema_version="test",
-        initial_state={},
+        workflow_version="0.5.0",
+        decision_schema_version="0.6.0",
+        initial_state={"forecast_horizons": ["D1"]},
         assignments=_assignments(),
         request_hash="0" * 64,
     )
@@ -197,7 +198,7 @@ def _write_drafts(directory: Path, request: HandoffRequest) -> HandoffDraftBundl
         )
     bundle = HandoffDraftBundle.model_validate(
         {
-            "protocol_version": "1.0.0",
+            "protocol_version": request.protocol_version,
             "run_id": str(request.run_id),
             "input_hash": request.input_hash,
             "request_hash": request.request_hash,
@@ -225,20 +226,33 @@ def _write_receipt(
 ) -> HandoffReceipt:
     input_raw = (directory / "input.json").read_bytes()
     drafts_raw = (directory / "drafts.json").read_bytes()
+    target_count = len(
+        {
+            (assignment.index_code, assignment.horizon.value)
+            for assignment in request.assignments
+        }
+    )
     unsigned = HandoffReceipt(
+        protocol_version=request.protocol_version,
         run_id=request.run_id,
         status=status,
         finalized_at=NOW + timedelta(minutes=10),
+        provider=request.provider,
         input_hash=request.input_hash,
         request_hash=request.request_hash,
         request_raw_hash=hashlib.sha256(input_raw).hexdigest(),
         drafts_hash=_canonical_hash(bundle.model_dump(mode="json")),
         drafts_raw_hash=hashlib.sha256(drafts_raw).hexdigest(),
         output_hash="c" * 64 if status == "completed" else None,
-        opinion_count=60 if status == "completed" else 0,
-        forecast_count=10 if status == "completed" else 0,
+        opinion_count=(
+            len(request.assignments) + target_count
+            if status == "completed"
+            else 0
+        ),
+        forecast_count=target_count if status == "completed" else 0,
         generated_by=bundle.generated_by,
         error=None if status == "completed" else "deterministic finalizer failed",
+        attempt_number=1,
         receipt_hash="0" * 64,
     )
     receipt = unsigned.model_copy(
@@ -463,6 +477,137 @@ def test_completed_receipt_requires_expected_terminal_counts(tmp_path: Path) -> 
     (handoff / "receipt.json").write_bytes(_json_bytes(payload))
 
     with pytest.raises(JobExecutionError, match="unexpected output counts"):
+        store.record_finalized(opened.execution_id, now=NOW)
+
+    assert store.resume(opened.execution_id) == pending
+
+
+@pytest.mark.parametrize(
+    ("updates", "removed_fields", "error"),
+    [
+        pytest.param(
+            {
+                "protocol_version": "1.0.0",
+                "provider": "codex-file-handoff-v1",
+                "attempt_number": 1,
+            },
+            ("previous_receipt_hash",),
+            "must omit v3 attempt metadata",
+            id="v1-attempt-number",
+        ),
+        pytest.param(
+            {
+                "protocol_version": "2.0.0",
+                "provider": "codex-file-handoff-v2",
+                "previous_receipt_hash": "8" * 64,
+            },
+            ("attempt_number",),
+            "must omit v3 attempt metadata",
+            id="v2-previous-receipt",
+        ),
+        pytest.param(
+            {
+                "protocol_version": "1.0.0",
+                "provider": "codex-file-handoff-v1",
+                "attempt_number": None,
+            },
+            ("previous_receipt_hash",),
+            "must omit v3 attempt metadata",
+            id="v1-null-attempt-number",
+        ),
+        pytest.param(
+            {},
+            ("attempt_number", "previous_receipt_hash"),
+            "require a positive attempt_number",
+            id="v3-missing-attempt-number",
+        ),
+        pytest.param(
+            {"attempt_number": 1, "previous_receipt_hash": "8" * 64},
+            (),
+            "must omit previous_receipt_hash",
+            id="v3-first-attempt-with-previous",
+        ),
+        pytest.param(
+            {"attempt_number": 1, "previous_receipt_hash": None},
+            (),
+            "must omit previous_receipt_hash",
+            id="v3-first-attempt-with-null-previous",
+        ),
+        pytest.param(
+            {"attempt_number": 2},
+            ("previous_receipt_hash",),
+            "require previous_receipt_hash",
+            id="v3-retry-without-previous",
+        ),
+        pytest.param(
+            {"attempt_number": 2, "previous_receipt_hash": None},
+            (),
+            "require previous_receipt_hash",
+            id="v3-retry-with-null-previous",
+        ),
+    ],
+)
+def test_job_execution_rejects_resealed_protocol_inconsistent_receipt_attempt_metadata(
+    tmp_path: Path,
+    updates: dict[str, Any],
+    removed_fields: tuple[str, ...],
+    error: str,
+) -> None:
+    store = _store(tmp_path)
+    opened = store.begin(
+        _manifest(),
+        idempotency_key="invalid-receipt-metadata",
+        now=NOW,
+    )
+    handoff, request = _prepared_handoff(tmp_path)
+    store.record_prepared(opened.execution_id, handoff, now=NOW)
+    bundle = _write_drafts(handoff, request)
+    pending = store.record_draft_ready(opened.execution_id, now=NOW)
+    receipt = _write_receipt(handoff, request, bundle)
+    payload = receipt.model_dump(mode="json")
+    payload.update(updates)
+    for field in removed_fields:
+        payload.pop(field, None)
+    payload["receipt_hash"] = _canonical_hash(
+        {key: value for key, value in payload.items() if key != "receipt_hash"}
+    )
+    (handoff / "receipt.json").write_bytes(_json_bytes(payload))
+
+    with pytest.raises(ValidationError, match=error):
+        store.record_finalized(opened.execution_id, now=NOW)
+
+    assert store.resume(opened.execution_id) == pending
+
+
+def test_job_execution_rejects_resealed_receipt_protocol_downgrade(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    opened = store.begin(
+        _manifest(),
+        idempotency_key="downgraded-receipt-protocol",
+        now=NOW,
+    )
+    handoff, request = _prepared_handoff(tmp_path)
+    store.record_prepared(opened.execution_id, handoff, now=NOW)
+    bundle = _write_drafts(handoff, request)
+    pending = store.record_draft_ready(opened.execution_id, now=NOW)
+    receipt = _write_receipt(handoff, request, bundle)
+    payload = receipt.model_dump(mode="json")
+    payload.update(
+        {
+            "protocol_version": "1.0.0",
+            "provider": "codex-file-handoff-v1",
+        }
+    )
+    payload.pop("attempt_number")
+    payload.pop("previous_receipt_hash", None)
+    payload["receipt_hash"] = _canonical_hash(
+        {key: value for key, value in payload.items() if key != "receipt_hash"}
+    )
+    (handoff / "receipt.json").write_bytes(_json_bytes(payload))
+
+    with pytest.raises(JobExecutionError, match="do not match the prepared handoff"):
         store.record_finalized(opened.execution_id, now=NOW)
 
     assert store.resume(opened.execution_id) == pending

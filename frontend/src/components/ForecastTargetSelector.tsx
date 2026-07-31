@@ -6,6 +6,7 @@ export function ForecastTargetSelector({
   horizon,
   onIndexChange,
   onHorizonChange,
+  horizons = ['D1', 'D2'],
   availableIndexCodes,
   availableTargets,
   disabled = false,
@@ -15,6 +16,7 @@ export function ForecastTargetSelector({
   horizon: Horizon
   onIndexChange: (indexCode: string) => void
   onHorizonChange: (horizon: Horizon) => void
+  horizons?: Horizon[]
   availableIndexCodes?: Set<string>
   availableTargets?: Set<string>
   disabled?: boolean
@@ -39,7 +41,7 @@ export function ForecastTargetSelector({
         })}
       </div>
       <div className="horizon-pills" aria-label="选择预测周期">
-        {(['D1', 'D2'] as Horizon[]).map((item) => (
+        {horizons.map((item) => (
           <button
             key={item}
             type="button"

@@ -12,7 +12,7 @@ Each Universe declares:
 
 - a stable `universe_id` and semantic `version`;
 - market, timezone, exchange calendar, currency, and session close;
-- ordered forecast horizons;
+- the ordered v1 calendar-horizon envelope;
 - one or more instruments with stable codes and display names;
 - optional asset type, sector, strategy bucket, tags, and Wiki binding;
 - optional per-instrument Agent briefs;
@@ -21,6 +21,12 @@ Each Universe declares:
 The loader rejects duplicate instruments, invalid timezones, unsupported
 horizons, unresolved Wiki bindings, inconsistent metadata, and incorrect
 hashes.
+
+`forecast-loop.market-universe/v1` retains the ordered `["D1", "D2"]`
+envelope so old snapshots and sealed runs remain verifiable. The workflow
+runtime selects the horizons it actually writes: handoff v3 uses D1 only,
+while frozen v1/v2 handoffs retain D1/D2. The compatibility field therefore
+does not authorize a current v3 run to emit D2.
 
 ## Run binding
 

@@ -884,6 +884,13 @@ def _validate_receipt_terminal_invariants(
     *,
     request: HandoffRequest,
 ) -> None:
+    if (
+        receipt.protocol_version != request.protocol_version
+        or receipt.provider != request.provider
+    ):
+        raise JobExecutionError(
+            "handoff receipt protocol and provider do not match the prepared handoff"
+        )
     target_count = len(
         {
             (assignment.index_code, assignment.horizon.value)

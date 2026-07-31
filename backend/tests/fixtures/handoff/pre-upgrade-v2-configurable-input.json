@@ -1,0 +1,1231 @@
+{
+  "assignments": [
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "分析货币、财政、监管、汇率与海外宏观向中国宽基指数的传导。",
+      "agent_id": "macro_policy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "识别当日新增事件、跨市场变化、市场叙事与预期差。",
+      "agent_id": "market_news_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "research",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "跟踪全球AI算力、存储与半导体产业链，并映射至中国宽基指数。",
+      "agent_id": "ai_storage_industry_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "research",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "strategy",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "strategy",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "strategy",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "strategy",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "strategy",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "strategy",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "strategy",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "strategy",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D1",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "strategy",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "综合专业研究观点，判断市场状态、风格、指数相对强弱与配置优先级。",
+      "agent_id": "strategy_agent",
+      "allowed_evidence_item_ids": [
+        "DEMO-EVIDENCE-ONLY"
+      ],
+      "horizon": "D2",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "strategy",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+      "wiki_entry_id": "VC-WIKI-MARKET-STRATEGY",
+      "wiki_sections": [
+        "synthesis"
+      ],
+      "wiki_title": "市场策略与指数配置",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D1",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "critic",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D2",
+      "index_code": "000300.SH",
+      "index_name": "沪深300",
+      "role": "critic",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D1",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "critic",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D2",
+      "index_code": "000905.SH",
+      "index_name": "中证500",
+      "role": "critic",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D1",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "critic",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D2",
+      "index_code": "000852.SH",
+      "index_name": "中证1000",
+      "role": "critic",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D1",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "critic",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D2",
+      "index_code": "399006.SZ",
+      "index_name": "创业板指",
+      "role": "critic",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D1",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "critic",
+      "target_date": "2026-07-14",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    },
+    {
+      "agent_brief": "检查反证、共识拥挤、数据污染、事件遗漏和结论失效条件。",
+      "agent_id": "risk_critic_agent",
+      "allowed_evidence_item_ids": [],
+      "horizon": "D2",
+      "index_code": "000688.SH",
+      "index_name": "科创50",
+      "role": "critic",
+      "target_date": "2026-07-15",
+      "wiki_content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+      "wiki_entry_id": "VC-WIKI-PREDICTION-LABELS",
+      "wiki_sections": [
+        "methodology",
+        "labels"
+      ],
+      "wiki_title": "预测标签、证据和风险方法",
+      "wiki_version": "1.0.0"
+    }
+  ],
+  "decision_schema_version": "0.5.0",
+  "finalize_deadline": "2026-07-13T23:01:00+08:00",
+  "initial_state": {
+    "as_of": "2026-07-13T15:00:00+08:00",
+    "believability_policy_version": "1.0.0-shadow",
+    "believability_snapshot_binding_hash": "952eb7d1443ea02f5b2d33f956a14822c3ff691c60dd038fc5e701ffd8972e79",
+    "believability_snapshot_hash": "415015fcdefcfb15718d7a9e83851cd3bf72ddcce18cb644e69e7ff38b6ea096",
+    "data_cutoff": "2026-07-13T15:00:00+08:00",
+    "data_quality": {},
+    "evidence_snapshot": {
+      "as_of": "2026-07-13T15:00:00+08:00",
+      "base_session": "2026-07-13",
+      "content_hash": "0b26060df7267abe9227a57134f382e0ebd4cd65a87d4c90134072bb47c14ee3",
+      "created_at": "2026-07-13T15:00:00+08:00",
+      "data_cutoff": "2026-07-13T15:00:00+08:00",
+      "items": [
+        {
+          "content_hash": "e846ecf2bccd3a9e31a10ff57e1a37bc0cacff50fe4365cfa7cdd8f40e1f4dde",
+          "entities": [
+            "000300.SH",
+            "000905.SH",
+            "000852.SH",
+            "399006.SZ",
+            "000688.SH"
+          ],
+          "event_time": "2026-07-13T15:00:00+08:00",
+          "event_type": "demo",
+          "id": "DEMO-EVIDENCE-ONLY",
+          "ingested_at": "2026-07-13T15:00:00+08:00",
+          "published_at": "2026-07-13T15:00:00+08:00",
+          "quote": "离线演示没有实时行情和资讯，仅验证工作流、引用与评分链路。",
+          "source_url": "https://example.invalid/forecast-loop-demo",
+          "summary": "离线演示没有实时行情和资讯，仅验证工作流、引用与评分链路。",
+          "title": "离线演示占位事实"
+        }
+      ],
+      "market_data": {
+        "000300.SH": {
+          "ingested_at": "2026-07-13T15:00:00+08:00",
+          "observed_at": "2026-07-13T15:00:00+08:00",
+          "source_hash": "270852af8ea87d9bfcf263dae40a12f0475313df5ce6882be9cbb539c2a6f4ca",
+          "source_url": "https://example.invalid/forecast-loop-demo-market",
+          "trade_date": "2026-07-13"
+        },
+        "000688.SH": {
+          "ingested_at": "2026-07-13T15:00:00+08:00",
+          "observed_at": "2026-07-13T15:00:00+08:00",
+          "source_hash": "7d27d4dfc825ad9683a14d9066dcd0edbdc66a6b257ee76587003259c3189bf7",
+          "source_url": "https://example.invalid/forecast-loop-demo-market",
+          "trade_date": "2026-07-13"
+        },
+        "000852.SH": {
+          "ingested_at": "2026-07-13T15:00:00+08:00",
+          "observed_at": "2026-07-13T15:00:00+08:00",
+          "source_hash": "607e74162824eacd5f2ad055d9c904baecb7832f72ff8121e2e5d56b1b5d651a",
+          "source_url": "https://example.invalid/forecast-loop-demo-market",
+          "trade_date": "2026-07-13"
+        },
+        "000905.SH": {
+          "ingested_at": "2026-07-13T15:00:00+08:00",
+          "observed_at": "2026-07-13T15:00:00+08:00",
+          "source_hash": "34db95f1f815235b39b77db820da8602dfd82078e1601ea1c407fab0959d87d0",
+          "source_url": "https://example.invalid/forecast-loop-demo-market",
+          "trade_date": "2026-07-13"
+        },
+        "399006.SZ": {
+          "ingested_at": "2026-07-13T15:00:00+08:00",
+          "observed_at": "2026-07-13T15:00:00+08:00",
+          "source_hash": "d3eb14fbf2c272ab78536941e104876a6a0277d2c9e9fc71771ddc11a2d6983d",
+          "source_url": "https://example.invalid/forecast-loop-demo-market",
+          "trade_date": "2026-07-13"
+        }
+      },
+      "target_sessions": [
+        "2026-07-14",
+        "2026-07-15"
+      ],
+      "trading_calendar": {
+        "ingested_at": "2026-07-13T15:00:00+08:00",
+        "observed_at": "2026-07-13T15:00:00+08:00",
+        "sessions": [
+          "2026-07-13",
+          "2026-07-14",
+          "2026-07-15"
+        ],
+        "source_hash": "dd4ee962050c5d0450730e9b64019033cbae0ee1c316c89e64138f1bf2703df0",
+        "source_url": "https://example.invalid/forecast-loop-demo-calendar"
+      },
+      "volatility_20d": {
+        "000300.SH": 0.011,
+        "000688.SH": 0.02,
+        "000852.SH": 0.017,
+        "000905.SH": 0.014,
+        "399006.SZ": 0.018
+      }
+    },
+    "forecasts": [],
+    "input_hash": "56b25ba7811c6cbbe997e6b2f3eacc4e1a7b1eb98c2f26e8dd0288b7fdad7d2d",
+    "market_universe": {
+      "calendar_id": "SSE",
+      "content_hash": "8e04e63eabbcfaea767182a72a455291a04c7b0e0a6de70a605e90c77c707a5a",
+      "horizons": [
+        "D1",
+        "D2"
+      ],
+      "instruments": [
+        {
+          "agent_briefs": {},
+          "asset_type": "index",
+          "code": "000300.SH",
+          "currency": "CNY",
+          "exchange": "SSE",
+          "name": "沪深300",
+          "sector": null,
+          "strategy_bucket": "large_cap",
+          "tags": [
+            "broad-market",
+            "large-cap"
+          ],
+          "wiki_entry_ids": {}
+        },
+        {
+          "agent_briefs": {},
+          "asset_type": "index",
+          "code": "000905.SH",
+          "currency": "CNY",
+          "exchange": "SSE",
+          "name": "中证500",
+          "sector": null,
+          "strategy_bucket": "mid_small_cap",
+          "tags": [
+            "broad-market",
+            "mid-cap"
+          ],
+          "wiki_entry_ids": {}
+        },
+        {
+          "agent_briefs": {},
+          "asset_type": "index",
+          "code": "000852.SH",
+          "currency": "CNY",
+          "exchange": "SSE",
+          "name": "中证1000",
+          "sector": null,
+          "strategy_bucket": "mid_small_cap",
+          "tags": [
+            "broad-market",
+            "small-cap"
+          ],
+          "wiki_entry_ids": {}
+        },
+        {
+          "agent_briefs": {},
+          "asset_type": "index",
+          "code": "399006.SZ",
+          "currency": "CNY",
+          "exchange": "SZSE",
+          "name": "创业板指",
+          "sector": null,
+          "strategy_bucket": "growth",
+          "tags": [
+            "growth",
+            "technology"
+          ],
+          "wiki_entry_ids": {}
+        },
+        {
+          "agent_briefs": {},
+          "asset_type": "index",
+          "code": "000688.SH",
+          "currency": "CNY",
+          "exchange": "SSE",
+          "name": "科创50",
+          "sector": null,
+          "strategy_bucket": "growth",
+          "tags": [
+            "growth",
+            "technology"
+          ],
+          "wiki_entry_ids": {}
+        }
+      ],
+      "market": "CN",
+      "schema_version": "forecast-loop.market-universe/v1",
+      "session_close": "15:00",
+      "timezone": "Asia/Shanghai",
+      "universe_id": "v2-compatible-universe",
+      "version": "1.0.0"
+    },
+    "opinions": [],
+    "run_id": "b2c4804f-e996-4c4c-a82b-c89cf0a261c9",
+    "wiki_snapshot": [
+      {
+        "body": "<!-- section:synthesis -->\n# 策略综合\n综合三位研究员并比较五个指数，不重复计算同源证据。\n",
+        "content_hash": "a20092dec7bc1f086db629399767331e9bd21ee8830f897d2e5299efc7588135",
+        "id": "VC-WIKI-MARKET-STRATEGY",
+        "owners": [
+          "strategy_agent"
+        ],
+        "published_at": "2026-07-13T00:00:00+08:00",
+        "referenced_by_count": 0,
+        "sections": [
+          {
+            "excerpt": "# 策略综合 综合三位研究员并比较五个指数，不重复计算同源证据。",
+            "slug": "synthesis",
+            "title": "策略综合"
+          }
+        ],
+        "source_urls": [
+          "https://www.csindex.com.cn/"
+        ],
+        "status": "active",
+        "tags": [
+          "strategy",
+          "allocation"
+        ],
+        "title": "市场策略与指数配置",
+        "updated_at": "2026-07-13",
+        "version": "1.0.0"
+      },
+      {
+        "body": "<!-- section:methodology -->\n# 方法\n所有研究判断必须只使用冻结证据和冻结 Wiki，并明确记录反证与失效条件。\n\n<!-- section:labels -->\n# 标签\n方向只允许上涨或下跌，小波动仅作为真实结果概率桶。\n",
+        "content_hash": "c583786aed54a3d223ff15879df80da58ed77b25c18cd5793f2ef495cfe06747",
+        "id": "VC-WIKI-PREDICTION-LABELS",
+        "owners": [
+          "forecast-loop"
+        ],
+        "published_at": "2026-07-13T00:00:00+08:00",
+        "referenced_by_count": 0,
+        "sections": [
+          {
+            "excerpt": "# 方法 所有研究判断必须只使用冻结证据和冻结 Wiki，并明确记录反证与失效条件。",
+            "slug": "methodology",
+            "title": "方法"
+          },
+          {
+            "excerpt": "# 标签 方向只允许上涨或下跌，小波动仅作为真实结果概率桶。",
+            "slug": "labels",
+            "title": "标签"
+          }
+        ],
+        "source_urls": [
+          "https://example.com/official-source"
+        ],
+        "status": "active",
+        "tags": [
+          "prediction",
+          "macro",
+          "market",
+          "risk",
+          "ai-storage"
+        ],
+        "title": "预测标签、证据和风险方法",
+        "updated_at": "2026-07-13",
+        "version": "1.0.0"
+      }
+    ],
+    "workflow_steps": []
+  },
+  "input_hash": "56b25ba7811c6cbbe997e6b2f3eacc4e1a7b1eb98c2f26e8dd0288b7fdad7d2d",
+  "mode": "demo",
+  "prepared_at": "2026-07-13T15:01:00+08:00",
+  "protocol_version": "2.0.0",
+  "provider": "codex-file-handoff-v2",
+  "request_hash": "e82c176b12a4fa23ee8e31ff71209db31631a7b6cdb8642468bf738b0f27e43d",
+  "run_id": "b2c4804f-e996-4c4c-a82b-c89cf0a261c9",
+  "workflow_version": "0.4.0"
+}

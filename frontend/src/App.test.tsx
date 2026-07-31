@@ -113,10 +113,10 @@ describe('forecast-loop app', () => {
 
   it('renders configured single-equity forecasts without fixed A-share tabs', async () => {
     const appleForecast = {
-      id: 'FORECAST-AAPL-D2',
+      id: 'FORECAST-AAPL-D1',
       index_code: 'AAPL.US',
       index_name: 'Apple',
-      horizon: 'D2',
+      horizon: 'D1',
       target_date: '2026-07-14',
       direction: 'up',
       probabilities: { up: 0.48, neutral: 0.34, down: 0.18 },
@@ -187,14 +187,12 @@ describe('forecast-loop app', () => {
     expect(screen.queryByRole('heading', { name: '沪深300' })).not.toBeInTheDocument()
   })
 
-  it('switches between D2 and D1 forecasts', async () => {
-    const user = userEvent.setup()
+  it('keeps the current dashboard focused on D1 forecasts', async () => {
     renderApp()
 
     await screen.findByRole('heading', { name: '今日投委会决策' })
-    expect(screen.getByText('未来两交易日方向预测')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /D1/ }))
     expect(screen.getByText('下一交易日方向预测')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /D2/ })).not.toBeInTheDocument()
   })
 
   it('renders the Wiki verification chain in fallback mode', async () => {

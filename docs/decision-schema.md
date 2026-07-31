@@ -14,7 +14,8 @@
 
 ### 周期与方向
 
-- horizon：D1 或 D2。
+- horizon 读取枚举：D1 或 D2；新 AgentDraft、AgentOpinion 与 Forecast 只写 D1，
+  D2 仅用于升级前已封签记录的读取、评价、反省和审计。
 - 新 AgentDraft、AgentOpinion 与 Forecast 的 direction：up 或 down。
 - run status：queued、running、completed 或 failed。
 
@@ -137,7 +138,7 @@ Quant 在可信只读数据适配器接入前不生成 AgentOpinion。
 
 ## Forecast
 
-CIO 每个指数、每个周期输出一条不可变 Forecast：
+CIO 当前为每个指数输出一条不可变 D1 Forecast：
 
 ~~~json
 {
@@ -145,9 +146,9 @@ CIO 每个指数、每个周期输出一条不可变 Forecast：
   "run_id": "uuid",
   "index_code": "000688.SH",
   "index_name": "科创50",
-  "horizon": "D2",
+  "horizon": "D1",
   "base_trade_date": "2026-07-13",
-  "target_date": "2026-07-15",
+  "target_date": "2026-07-14",
   "as_of": "2026-07-13T15:10:00+08:00",
   "data_cutoff": "2026-07-13T15:05:00+08:00",
   "direction": "up",
@@ -178,7 +179,8 @@ CIO 每个指数、每个周期输出一条不可变 Forecast：
 约束：
 
 - 同一 run_id + index_code + horizon 只允许一条 Forecast。
-- D1 和 D2 的 target_date 分别取快照中第一、第二个冻结目标交易日；评价时不能重算。
+- 新 D1 的 target_date 取快照中第一个冻结目标交易日；历史 D2 保留其原先冻结的第二个
+  目标交易日。两者评价时都不能重算。
 - threshold 按预测基准日 σ20 计算，详见 Wiki 的 prediction-labels。
 - confidence 等于 `max(p_up, p_down) / (p_up + p_down)`，表示排除小波动结果后的涨跌条件
   置信度，仅用于展示，不替代三结果概率校准评分。

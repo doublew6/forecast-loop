@@ -34,15 +34,10 @@ const sourceCitation: Citation = {
 
 const forecasts: Forecast[] = [
   ['000300.SH', '沪深300', 'D1', 'up', 0.31, 0.45, 0.24, 0.0042, '涨跌二选一时正向证据略占优；小波动概率仍较高。'],
-  ['000300.SH', '沪深300', 'D2', 'up', 0.48, 0.34, 0.18, 0.0059, '政策预期与权重科技形成轻微正向共振，仍保留较高小波动概率。'],
   ['000905.SH', '中证500', 'D1', 'up', 0.35, 0.42, 0.23, 0.0058, '中盘成长情绪改善，涨跌二选一时偏向上涨，但短周期噪声较高。'],
-  ['000905.SH', '中证500', 'D2', 'up', 0.51, 0.30, 0.19, 0.0082, '产业催化向中盘制造扩散，正面证据略占优。'],
   ['000852.SH', '中证1000', 'D1', 'up', 0.33, 0.43, 0.24, 0.0072, '风险偏好回暖略占优，二元方向选择上涨，同时保留较高小波动概率。'],
-  ['000852.SH', '中证1000', 'D2', 'up', 0.47, 0.30, 0.23, 0.0102, '主题扩散有利于小盘，但成交持续性仍需验证。'],
   ['399006.SZ', '创业板指', 'D1', 'up', 0.52, 0.29, 0.19, 0.0066, '全球 AI 硬件景气信号与成长风格修复共同支持。'],
-  ['399006.SZ', '创业板指', 'D2', 'up', 0.57, 0.26, 0.17, 0.0093, '存储与算力链联动增强，对创业板盈利预期构成边际支撑。'],
   ['000688.SH', '科创50', 'D1', 'up', 0.55, 0.27, 0.18, 0.0074, '半导体景气跟踪指标转强，但需警惕拥挤交易。'],
-  ['000688.SH', '科创50', 'D2', 'up', 0.61, 0.23, 0.16, 0.0105, 'AI 存储景气是当前最强证据，产业 Agent 与资讯 Agent 方向一致。'],
 ].map((item, index) => {
   const [index_code, index_name, horizon, direction, up, neutral, down, threshold, rationale] = item as [
     string,
@@ -147,17 +142,15 @@ const agents = [
   },
 ]
 
-export const demoOpinions: AgentOpinion[] = agents.flatMap((agent, index) =>
-  (['D1', 'D2'] as const).map((horizon) => ({
-    id: `opinion-${index + 1}-${horizon}`,
-    ...agent,
-    status: agent.agent_id === 'quant_agent' ? 'placeholder' as const : 'active' as const,
-    index_code: '000300.SH',
-    horizon,
-    invalidation_conditions: ['关键来源被更正', '下一交易日成交结构与预期方向明显背离'],
-    citations: agent.agent_id === 'quant_agent' ? [] : [wikiCitation, sourceCitation],
-  })),
-)
+export const demoOpinions: AgentOpinion[] = agents.map((agent, index) => ({
+  id: `opinion-${index + 1}-D1`,
+  ...agent,
+  status: agent.agent_id === 'quant_agent' ? 'placeholder' as const : 'active' as const,
+  index_code: '000300.SH',
+  horizon: 'D1',
+  invalidation_conditions: ['关键来源被更正', '下一交易日成交结构与预期方向明显背离'],
+  citations: agent.agent_id === 'quant_agent' ? [] : [wikiCitation, sourceCitation],
+}))
 
 export const demoMeeting: Meeting = {
   run: {
@@ -175,7 +168,7 @@ export const demoMeeting: Meeting = {
       warning: '演示数据仅用于验证界面，不可用于投资决策。',
     },
     mode: 'demo',
-    forecasts_count: 10,
+    forecasts_count: 5,
   },
   opinions: demoOpinions,
   forecasts,
@@ -185,7 +178,7 @@ export const demoMeeting: Meeting = {
     { id: 'strategy', label: '市场策略研究员综合', status: 'completed', detail: '形成市场状态、风格与指数配置判断' },
     { id: 'critic', label: '风险反证检查', status: 'completed', detail: '提出 4 条反证，未发现未来信息' },
     { id: 'evidence', label: '引用与时间校验', status: 'completed', detail: '全部引用在数据截止时间前可见' },
-    { id: 'cio', label: 'CIO 形成最终判断', status: 'completed', detail: '生成 5 个指数 × 2 个周期预测' },
+    { id: 'cio', label: 'CIO 形成最终判断', status: 'completed', detail: '生成 5 个指数 × D1 预测' },
   ],
 }
 
@@ -343,7 +336,7 @@ export const demoWiki: WikiEntry[] = [
 ]
 
 export const demoRuns: RunSummary[] = [
-  { id: 'RUN-20260713-001', as_of: asOf, data_cutoff: '2026-07-13T15:00:00+08:00', status: 'completed', duration_seconds: 86, data_quality: 'passed', forecasts_count: 10 },
+  { id: 'RUN-20260713-001', as_of: asOf, data_cutoff: '2026-07-13T15:00:00+08:00', status: 'completed', duration_seconds: 86, data_quality: 'passed', forecasts_count: 5 },
   { id: 'RUN-20260712-002', as_of: '2026-07-12T15:30:00+08:00', data_cutoff: '2026-07-12T15:00:00+08:00', status: 'failed', duration_seconds: 31, data_quality: 'failed', forecasts_count: 0, error: '关键行情源的数据日期未通过新鲜度检查' },
   { id: 'RUN-20260712-001', as_of: '2026-07-12T15:28:00+08:00', data_cutoff: '2026-07-12T15:00:00+08:00', status: 'completed', duration_seconds: 92, data_quality: 'warning', forecasts_count: 10 },
   { id: 'RUN-20260711-001', as_of: '2026-07-11T15:31:00+08:00', data_cutoff: '2026-07-11T15:00:00+08:00', status: 'completed', duration_seconds: 79, data_quality: 'passed', forecasts_count: 10 },

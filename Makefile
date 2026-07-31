@@ -1,4 +1,4 @@
-.PHONY: install install-hooks public-preflight public-preflight-staged public-preflight-range dev backend worker frontend test lint build release-artifacts release-history-audit demo benchmark-verify snapshot prediction-snapshot codex-prepare codex-finalize reflection-prepare reflection-freeze-sources reflection-finalize reflection-review reflection-render lesson-replay lesson-approve lesson-revalidate lesson-due lesson-verify judgment-record judgment-export judgment-verify market-snapshot market-import market-block migrate database-status migration-smoke recovery-backup recovery-verify recovery-restore docker-config docker-smoke docker-up docker-down
+.PHONY: install install-hooks public-preflight public-preflight-staged public-preflight-range dev backend worker frontend test lint build release-artifacts release-history-audit demo benchmark-verify snapshot prediction-snapshot codex-prepare codex-finalize codex-retry reflection-prepare reflection-freeze-sources reflection-finalize reflection-review reflection-render lesson-replay lesson-approve lesson-revalidate lesson-due lesson-verify judgment-record judgment-export judgment-verify market-snapshot market-import market-block migrate database-status migration-smoke recovery-backup recovery-verify recovery-restore docker-config docker-smoke docker-up docker-down
 
 PYTHON ?= .venv/bin/python
 RELEASE_VERSION ?= 0.1.0
@@ -79,6 +79,10 @@ codex-prepare:
 codex-finalize:
 	@test -n "$(ARGS)" || (echo 'usage: make codex-finalize ARGS="[--mode demo|live] /absolute/job/path/from-prepare"' && exit 2)
 	PYTHONPATH=backend $(PYTHON) scripts/codex_handoff.py finalize $(ARGS)
+
+codex-retry:
+	@test -n "$(ARGS)" || (echo 'usage: make codex-retry ARGS="[--mode demo|live] /absolute/failed-v3-job/path"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) scripts/codex_handoff.py retry $(ARGS)
 
 reflection-prepare:
 	@test -n "$(ARGS)" || (echo 'usage: make reflection-prepare ARGS="<source-run-id> --horizon D1|D2 --market-snapshot /absolute/path.json"' && exit 2)

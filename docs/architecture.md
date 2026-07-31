@@ -3,10 +3,11 @@
 ## 目标与边界
 
 forecast-loop 是一个可验证的预测 Agent 框架。默认配置在每个 A 股交易日收盘后，
-对沪深300、中证500、中证1000、创业板指和科创50生成 D1、D2 涨跌二元判断；版本化
-Market Universe 也可把同一协议应用到单一市场时钟下的港股、美股、指数或个股，同时
-保留上涨、小波动、下跌三种实际结果的概率，并保存当时可见的信息、Wiki 引用、Agent
-版本和后验评分。
+对沪深300、中证500、中证1000、创业板指和科创50生成下一有效交易日（D1）的涨跌
+二元判断；版本化 Market Universe 也可把同一协议应用到单一市场时钟下的港股、美股、
+指数或个股。升级前已封签的 D2 记录继续可读、可评价和可反省，但新运行不再写 D2。
+系统同时保留上涨、小波动、下跌三种实际结果的概率，并保存当时可见的信息、Wiki 引用、
+Agent 版本和后验评分。
 
 第一期不连接券商、不执行交易、不生成仓位，也不声称概率预测等同于投资收益。
 Quant Agent 通过本地 JSON 只读 bundle adapter 进入独立 shadow benchmark。公开核心
@@ -54,7 +55,7 @@ flowchart LR
     P --> T["Blind Target Projection<br/>不含 CIO 方向"]
     T --> U["Manual Agent<br/>User Judgment v1"]
     U --> UW["私有手动信号账本<br/>append-only"]
-    P --> E["D1/D2 到期评价"]
+    P --> E["D1 到期评价 / 历史 D2 兼容评价"]
     E --> UE["Manual Signal Evaluation"]
     U --> UE
     E --> BS["可信度证据快照<br/>shadow only"]
@@ -173,9 +174,11 @@ live 快照必须包含：
 - 至少一条带可信域名 URL、三时间字段和 canonical content_hash 的 EvidenceItem；
 - 同一 as_of 日期内的新鲜 data_cutoff，以及快照整体 canonical hash。
 
-系统重算哈希并检查域名 allowlist、时区与截止时点。任何过期、未来、缺项或哈希不匹配
-都阻断 live，不允许降级成旧快照。run 开始时还把 Wiki 条目及段落冻结进状态；后续
-节点只读这份对象，避免 Wiki 在验证和持久化之间变更。
+这两个 target session 是 Evidence Snapshot v1 与 Market Universe v1 的兼容输入包络；
+handoff v3 和当前 workflow 只消费第一个 D1 session，保留第二个 session 不代表会写入
+新的 D2 Forecast。系统重算哈希并检查域名 allowlist、时区与截止时点。任何过期、未来、
+缺项或哈希不匹配都阻断 live，不允许降级成旧快照。run 开始时还把 Wiki 条目及段落
+冻结进状态；后续节点只读这份对象，避免 Wiki 在验证和持久化之间变更。
 
 live 发布门禁要求 input_hash 同时覆盖行情/事件快照、Wiki 清单、实际模型名、Agent
 版本与 weight 元数据、prompt 版本、决策 schema、聚合版本，以及本次只读可信度证据快照的
@@ -216,8 +219,8 @@ Evidence Validator 是确定性代码，不是另一个自由生成的 Agent。�
 CIO 当前无条件将 Strategy 的上下行结果概率各对称缩减 15%，把这部分概率移入小波动
 结果桶；Risk Critic 的反证进入 counter evidence 与 invalidation conditions，但不决定
 是否执行或改变折扣幅度。该操作提高结果不确定性，但不改变排除小波动后的涨跌比。
-随后为 Universe 内每个标的的 D1、D2 各生成一个 Forecast。Forecast 必须比较 p_up 与 p_down 后
-明确选择较大的一侧；两者精确
+随后为 Universe 内每个标的生成一个 D1 Forecast。升级前的 D2 Forecast 保持不可变并
+继续通过历史读取和评价路径访问。Forecast 必须比较 p_up 与 p_down 后明确选择较大的一侧；两者精确
 并列时 schema 校验失败。p_neutral 只描述到期收益处于评价噪声带的可能性，不是可选
 立场。已完成记录不允许覆盖；同一 as_of 的
 queued、running 或 completed live run 会被唯一门禁拒绝，failed run 才允许以新 run_id
@@ -225,10 +228,10 @@ queued、running 或 completed live run 会被唯一门禁拒绝，failed run �
 
 ### 5. 到期评价
 
-D1、D2 只在各自冻结 target_date 收盘后评价。请求提供基准日和目标日两条正收盘观察，
-每条都带交易日、原始 URL 和 source_hash；服务端校验日期与成熟时间后计算累计收益，
-不接受调用方提交的 actual_return。评价只追加到原 forecast_id，并保存两条价格、
-观察时间、输入哈希、标签、是否正确和 Brier Score。
+当前 D1 与历史 D2 都只在各自冻结 target_date 收盘后评价。请求提供基准日和目标日两条
+正收盘观察，每条都带交易日、原始 URL 和 source_hash；服务端校验日期与成熟时间后计算
+累计收益，不接受调用方提交的 actual_return。评价只追加到原 forecast_id，并保存两条
+价格、观察时间、输入哈希、标签、是否正确和 Brier Score。
 
 Demo 完全不生成正式评价；迁移会清理旧版生成的合成 Demo 评价。成绩单只读取
 completed Live 评价批次中的 `OpinionEvaluation`，再按 agent_version 与 model_name
@@ -307,8 +310,9 @@ Demo 模式仍同步执行。完整协议见[持久预测任务队列](persisten
 
 页面职责：
 
-- Dashboard：五个指数 D1/D2 概率、阈值和数据状态。
-- Meeting Detail：Agent 观点、证据、反证、引用和执行轨迹。
+- Dashboard：当前五个指数的 D1 概率、阈值和数据状态。
+- Meeting Detail：Agent 观点、证据、反证、引用和执行轨迹；显式打开旧运行时可切换其
+  已封签的 D2。
 - Scorecards：展示当前 Agent/模型版本按指数与周期统计的准确率、Brier Score 和样本口径；
   旧版本记录保留在数据库中，历史版本切片查询仍待补充；Scorecard 是后验证据展示，
   不会自动改写工作流。

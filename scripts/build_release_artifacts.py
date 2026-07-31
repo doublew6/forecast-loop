@@ -19,6 +19,17 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Final
 
+try:
+    from scripts.audit_public_boundary import (
+        BoundaryAuditError,
+        assert_public_revision,
+    )
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from audit_public_boundary import (  # type: ignore[no-redef]
+        BoundaryAuditError,
+        assert_public_revision,
+    )
+
 PROJECT_NAME: Final = "forecast-loop"
 FRONTEND_PACKAGE_NAME: Final = "forecast-loop-frontend"
 GIT_OBJECT_PATTERN: Final = re.compile(r"[0-9a-f]{40}")
@@ -327,6 +338,15 @@ def _gzip_bytes(body: bytes, output: Path, *, epoch: int) -> None:
             compressed.write(body)
 
 
+def _assert_public_release_revision(repository: Path, revision: str) -> None:
+    try:
+        assert_public_revision(repository, revision)
+    except BoundaryAuditError as exc:
+        raise ReleaseBuildError(
+            "selected revision failed the public-boundary audit"
+        ) from exc
+
+
 def build_source_archive(
     repository: Path,
     output: Path,
@@ -338,6 +358,7 @@ def build_source_archive(
     """Archive exactly the selected Git tree with deterministic gzip metadata."""
 
     commit, _tree = _resolve_revision(repository, revision)
+    _assert_public_release_revision(repository, commit)
     result = _run(
         (
             "git",
@@ -581,6 +602,7 @@ def build_release_artifacts(
 
     root = repository.resolve(strict=True)
     commit, _tree = _resolve_revision(root, revision)
+    _assert_public_release_revision(root, commit)
     source_date_epoch = (
         _git_source_date_epoch(root, commit)
         if epoch is None

@@ -16,6 +16,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- New forecast writes and the current Dashboard use D1 only. Handoff protocol
+  v3 seals that contract, previously prepared v2 D1/D2 jobs remain finalizable,
+  and historical D2 forecasts remain readable and evaluable.
 - Operator-maintained Agent Wiki pages now default to the Git-ignored
   `data/wiki/` tree. The checked-in Wiki contains only three synthetic
   `demo-only` examples, and Live never falls back to them.
@@ -28,6 +31,20 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - New Live User Judgments use the target trade date's configured market-open
   time as their deadline. Existing v1/v2 seals remain verifiable, while new
   records use the immutable `user-judgment/v3` policy.
+
+### Fixed
+
+- Audit-bundle and job-execution readers now fail closed when handoff receipt
+  protocol, provider, or retry metadata is version-inconsistent.
+- Source archive creation now audits the selected Git revision with the
+  built-in public-boundary policy before writing any artifact.
+- Demo Wiki fallback now activates when a local catalog has no runtime-valid
+  entry, including draft-only catalogs. Live list, detail, and freeze paths
+  never return bundled or inline demo material.
+- Lesson Markdown links now resolve from the configured Lesson archive to the
+  configured Reflection archive instead of assuming legacy directory names.
+- The current static Demo run reports the same five D1 forecasts in its batch,
+  meeting, and run-history metadata.
 
 ## [0.1.0] - 2026-07-29
 

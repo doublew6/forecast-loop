@@ -233,6 +233,7 @@ def scorecard(
     market_universe_hash: str,
     model_name: str | None = None,
     forecast_model_version: str | None = None,
+    latest_frozen_partition: bool = False,
 ) -> ScorecardRead:
     if agent_id not in AGENT_BY_ID:
         raise KeyError(agent_id)
@@ -282,16 +283,38 @@ def scorecard(
         WorkflowRun.market_universe_hash == market_universe_hash,
         EvaluationBatch.status == "completed",
         OpinionEvaluation.included_in_direction_score.is_(True),
-        AgentOpinion.agent_version == agent.version,
         AgentOpinion.horizon == horizon,
         AgentOpinion.direction.in_((Direction.UP.value, Direction.DOWN.value)),
     )
-    if model_name:
-        statement = statement.where(AgentOpinion.model_name == model_name)
-    if forecast_model_version:
-        statement = statement.where(Forecast.model_version == forecast_model_version)
     if index_code:
         statement = statement.where(AgentOpinion.index_code == index_code)
+    selected_agent_version = agent.version
+    if latest_frozen_partition:
+        # New runs no longer create D2 rows, so a D2 scorecard cannot inherit
+        # the current D1 runtime identity. Select the newest scoreable legacy
+        # partition first, then keep every persisted identity version exact.
+        partition = session.execute(
+            statement.with_only_columns(
+                AgentOpinion.agent_version,
+                AgentOpinion.model_name,
+                Forecast.model_version,
+            )
+            .order_by(
+                WorkflowRun.as_of.desc(),
+                WorkflowRun.completed_at.desc(),
+                AgentOpinion.id.desc(),
+            )
+            .limit(1)
+        ).one_or_none()
+        if partition is None:
+            statement = statement.where(False)
+        else:
+            selected_agent_version, model_name, forecast_model_version = partition
+    statement = statement.where(AgentOpinion.agent_version == selected_agent_version)
+    if model_name is not None:
+        statement = statement.where(AgentOpinion.model_name == model_name)
+    if forecast_model_version is not None:
+        statement = statement.where(Forecast.model_version == forecast_model_version)
     rows = session.execute(statement).all()
     if not rows:
         model_identity = f" / {model_name}" if model_name else ""
@@ -304,7 +327,7 @@ def scorecard(
             accuracy=None,
             average_brier=None,
             direction_metrics=_empty_direction_metrics(),
-            agent_version=agent.version,
+            agent_version=selected_agent_version,
             model_name=model_name,
             note=(
                 f"当前版本 v{agent.version}{model_identity} 尚无已到期样本；"
@@ -422,7 +445,7 @@ def scorecard(
         direction_metrics=metrics,
         calibration=calibration,
         expected_calibration_error=expected_calibration_error,
-        agent_version=agent.version,
+        agent_version=selected_agent_version,
         model_name=model_name,
         note=(
             f"已覆盖 {prediction_dates} 个预测截面、{sample_size} 条"

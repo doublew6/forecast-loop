@@ -182,15 +182,22 @@ def latest_forecasts(
     horizon: Annotated[Horizon | None, Query()] = None,
 ) -> LatestForecastResponse:
     universe = _current_market_universe(request)
-    run = _first_run_for_universe(
-        db,
+    run_statement = (
         select(WorkflowRun)
         .where(
             WorkflowRun.status == RunStatus.COMPLETED.value,
             WorkflowRun.mode
             == ("demo" if request.app.state.settings.use_demo_provider else "live"),
         )
-        .order_by(WorkflowRun.as_of.desc(), WorkflowRun.completed_at.desc()),
+        .order_by(WorkflowRun.as_of.desc(), WorkflowRun.completed_at.desc())
+    )
+    if horizon is not None:
+        run_statement = run_statement.where(
+            WorkflowRun.forecasts.any(Forecast.horizon == horizon.value)
+        )
+    run = _first_run_for_universe(
+        db,
+        run_statement,
         universe=universe,
     )
     if run is None:
@@ -298,11 +305,14 @@ def agent_scorecard(
     request: Request,
     db: DBSession,
     index_code: str | None = None,
-    horizon: Annotated[Horizon, Query()] = Horizon.D2,
+    horizon: Annotated[Horizon, Query()] = Horizon.D1,
 ) -> ScorecardRead:
     if agent_id not in AGENT_BY_ID:
         raise HTTPException(status_code=404, detail="Agent not found")
     universe = _current_market_universe(request)
+    historical_partition = (
+        horizon is Horizon.D2 and agent_id != "user_judgment_agent"
+    )
     try:
         return scorecard_facade(
             db,
@@ -313,8 +323,17 @@ def agent_scorecard(
             actor_id=request.app.state.settings.user_judgment_actor_id,
             timezone=request.app.state.settings.timezone,
             market_universe_hash=universe.content_hash,
-            model_name=request.app.state.workflow.model_name_for_agent(agent_id),
-            forecast_model_version=request.app.state.workflow.workflow_version,
+            model_name=(
+                None
+                if historical_partition
+                else request.app.state.workflow.model_name_for_agent(agent_id)
+            ),
+            forecast_model_version=(
+                None
+                if historical_partition
+                else request.app.state.workflow.workflow_version
+            ),
+            latest_frozen_partition=historical_partition,
         )
     except UserJudgmentWikiError as exc:
         raise HTTPException(

@@ -25,7 +25,7 @@ const sourceTypeLabel = {
 
 export function Scorecards() {
   const query = useScorecards()
-  const [horizon, setHorizon] = useState<Horizon>('D2')
+  const [horizon, setHorizon] = useState<Horizon>('D1')
   const rows = useMemo(
     () => query.data?.data.filter((row) => row.horizon === horizon) ?? [],
     [query.data, horizon],

@@ -81,6 +81,9 @@ def write_reflection_markdown(
         f"{row.target_date.isoformat()}-{row.horizon}-{row.id}.md"
     )
     reflection_path = _child_path(reflection_directory, reflection_filename)
+    reflection_reference = Path(
+        os.path.relpath(reflection_path, start=lesson_directory)
+    ).as_posix()
 
     reflection_payload = _reflection_payload(row)
     reflection_payload_hash = _canonical_hash(reflection_payload)
@@ -96,7 +99,7 @@ def write_reflection_markdown(
         lesson_payload = _lesson_payload(
             row,
             lesson,
-            reflection_filename=reflection_filename,
+            reflection_file=reflection_reference,
         )
         lesson_payload_hash = _canonical_hash(lesson_payload)
         lesson_bytes = _render_lesson(
@@ -335,7 +338,7 @@ def _lesson_payload(
     row: ReflectionRun,
     lesson: LessonProposal,
     *,
-    reflection_filename: str,
+    reflection_file: str,
 ) -> dict[str, Any]:
     return {
         "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
@@ -358,7 +361,7 @@ def _lesson_payload(
         },
         "source": {
             "reflection_id": row.id,
-            "reflection_file": f"../reflections/{reflection_filename}",
+            "reflection_file": reflection_file,
             "source_run_id": row.source_run_id,
             "source_batch_id": row.source_batch_id,
             "target_date": row.target_date.isoformat(),

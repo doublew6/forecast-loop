@@ -21,6 +21,7 @@ from app.services.evaluation import (
 )
 from app.services.reflection import MarketSnapshotFact, materialize_evaluation_batch
 from app.services.seed import seed_demo_data
+from app.workflow import CommitteeWorkflow
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -150,8 +151,32 @@ def test_evaluation_rejects_before_target_close_and_wrong_base_date(client: Test
         session.close()
 
 
-def test_price_history_is_immutable_across_horizons(client: TestClient) -> None:
-    _create_run(client)
+def test_price_history_is_immutable_across_horizons(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    legacy_settings = client.app.state.settings.model_copy(
+        update={"checkpoint_path": tmp_path / "legacy-evaluation-checkpoint.sqlite3"}
+    )
+    legacy_workflow = CommitteeWorkflow(
+        settings=legacy_settings,
+        database=client.app.state.database,
+        provider=client.app.state.workflow.provider,
+        wiki=client.app.state.workflow.wiki,
+        runtime_mode="legacy_dual_horizon",
+    )
+    try:
+        legacy_run = legacy_workflow.run(
+            as_of=datetime.fromisoformat("2026-07-10T15:00:00+08:00")
+        )
+    finally:
+        legacy_workflow.close()
+    with client.app.state.database.session_factory() as session:
+        persisted = session.get(WorkflowRun, legacy_run.id)
+        assert persisted is not None
+        persisted.mode = "live"
+        session.commit()
+
     session, d1 = _forecast(client, "D1")
     try:
         now = datetime.combine(d1.target_date, time(15, 10), tzinfo=ZONE)

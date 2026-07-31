@@ -1,4 +1,10 @@
-import { demoForecastBatch, demoOpinions, demoScorecards } from './demo'
+import {
+  demoForecastBatch,
+  demoMeeting,
+  demoOpinions,
+  demoRuns,
+  demoScorecards,
+} from './demo'
 
 describe('fallback demo data', () => {
   it('never invents a Quant opinion and keeps every prediction direction binary', () => {
@@ -7,6 +13,16 @@ describe('fallback demo data', () => {
     expect(
       demoForecastBatch.forecasts.every((forecast) => ['up', 'down'].includes(forecast.direction)),
     ).toBe(true)
+  })
+
+  it('keeps the current D1 demo run and its forecast counts consistent', () => {
+    const currentRun = demoRuns.find((run) => run.id === demoForecastBatch.run_id)
+
+    expect(demoForecastBatch.forecasts).toHaveLength(5)
+    expect(demoForecastBatch.forecasts.every((forecast) => forecast.horizon === 'D1')).toBe(true)
+    expect(demoOpinions.every((opinion) => opinion.horizon === 'D1')).toBe(true)
+    expect(demoMeeting.run.forecasts_count).toBe(demoForecastBatch.forecasts.length)
+    expect(currentRun?.forecasts_count).toBe(demoForecastBatch.forecasts.length)
   })
 
   it('does not invent historical scorecards when the API is unavailable', () => {

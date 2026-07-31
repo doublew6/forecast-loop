@@ -243,6 +243,75 @@ def _tracked_candidates(repository: Path) -> tuple[Candidate, ...]:
     return tuple(candidates)
 
 
+def _revision_candidates(
+    repository: Path,
+    revision: str,
+) -> tuple[Candidate, ...]:
+    entries = _run_git(
+        repository,
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        revision,
+        "--",
+    ).split(b"\0")
+    candidates: list[Candidate] = []
+    for entry in entries:
+        if not entry:
+            continue
+        metadata, separator, raw_path = entry.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3 or not raw_path:
+            raise BoundaryAuditError("Git returned a malformed revision entry")
+        mode, object_type, object_id = fields
+        if object_type != b"blob" or mode not in {b"100644", b"100755"}:
+            raise BoundaryAuditError(
+                "selected revisions must contain only regular files"
+            )
+        try:
+            path = raw_path.decode("utf-8", errors="strict")
+            object_name = object_id.decode("ascii", errors="strict")
+            size = int(_run_git(repository, "cat-file", "-s", object_name))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise BoundaryAuditError(
+                "Git returned malformed revision metadata"
+            ) from exc
+        body = (
+            b"\0"
+            if size > MAX_BLOB_BYTES
+            else _run_git(repository, "cat-file", "blob", object_name)
+        )
+        candidates.append(Candidate(path=path, body=body))
+    return tuple(candidates)
+
+
+def assert_public_revision(repository: Path, revision: str) -> None:
+    """Reject a Git revision that violates the complete public-tree policy."""
+
+    root = _safe_repository(repository)
+    private_rules = _load_private_rules(root, None)
+    try:
+        required = private_patterns_required(root)
+    except PrivateBoundaryError as exc:
+        raise BoundaryAuditError(str(exc)) from exc
+    if required and not private_rules:
+        raise BoundaryAuditError(
+            "private-boundary patterns are required but not configured"
+        )
+    candidates = _revision_candidates(root, revision)
+    counts, _locations, skipped = audit_candidates(
+        candidates,
+        private_rules=private_rules,
+    )
+    if skipped:
+        counts["skipped_file"] += skipped
+    if counts:
+        raise BoundaryAuditError(
+            "selected Git revision failed the built-in public-boundary policy"
+        )
+
+
 def _filesystem_candidates(paths: Iterable[Path]) -> tuple[Candidate, ...]:
     candidates: list[Candidate] = []
     for requested in paths:
