@@ -135,15 +135,53 @@ def _export_completed_audit(client, tmp_path: Path) -> Path:
     )
 
 
-def _reseal_receipt(job_dir: Path, **updates: Any) -> None:
+def _reseal_receipt(
+    job_dir: Path,
+    *,
+    removed_fields: tuple[str, ...] = (),
+    **updates: Any,
+) -> None:
     receipt_path = job_dir / "receipt.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     receipt.update(updates)
+    for field in removed_fields:
+        receipt.pop(field, None)
     receipt["receipt_hash"] = _canonical_hash(
         {key: value for key, value in receipt.items() if key != "receipt_hash"}
     )
     receipt_path.chmod(0o600)
     receipt_path.write_bytes(_json_bytes(receipt))
+
+
+def _reseal_bundled_receipt(
+    audit_bundle: Path,
+    *,
+    updates: dict[str, Any],
+    removed_fields: tuple[str, ...] = (),
+) -> None:
+    receipt_path = audit_bundle / "handoff" / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt.update(updates)
+    for field in removed_fields:
+        receipt.pop(field, None)
+    receipt["receipt_hash"] = _canonical_hash(
+        {key: value for key, value in receipt.items() if key != "receipt_hash"}
+    )
+    receipt_body = _json_bytes(receipt)
+    receipt_path.write_bytes(receipt_body)
+
+    manifest_path = audit_bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["receipt_hash"] = receipt["receipt_hash"]
+    artifact = next(
+        item for item in manifest["artifacts"] if item["path"] == "handoff/receipt.json"
+    )
+    artifact["sha256"] = hashlib.sha256(receipt_body).hexdigest()
+    artifact["size"] = len(receipt_body)
+    manifest["bundle_hash"] = _canonical_hash(
+        {key: value for key, value in manifest.items() if key != "bundle_hash"}
+    )
+    manifest_path.write_bytes(_json_bytes(manifest))
 
 
 def test_export_and_verify_completed_handoff_audit_bundle(client, tmp_path) -> None:
@@ -178,6 +216,95 @@ def test_export_and_verify_completed_handoff_audit_bundle(client, tmp_path) -> N
     assert manifest.output_hash == receipt_payload["output_hash"]
 
 
+@pytest.mark.parametrize(
+    ("updates", "removed_fields", "error"),
+    [
+        pytest.param(
+            {
+                "protocol_version": "1.0.0",
+                "provider": "codex-file-handoff-v1",
+                "attempt_number": 1,
+            },
+            ("previous_receipt_hash",),
+            "must omit v3 attempt metadata",
+            id="v1-attempt-number",
+        ),
+        pytest.param(
+            {
+                "protocol_version": "2.0.0",
+                "provider": "codex-file-handoff-v2",
+                "previous_receipt_hash": "8" * 64,
+            },
+            ("attempt_number",),
+            "must omit v3 attempt metadata",
+            id="v2-previous-receipt",
+        ),
+        pytest.param(
+            {
+                "protocol_version": "1.0.0",
+                "provider": "codex-file-handoff-v1",
+                "attempt_number": None,
+            },
+            ("previous_receipt_hash",),
+            "must omit v3 attempt metadata",
+            id="v1-null-attempt-number",
+        ),
+        pytest.param(
+            {},
+            ("attempt_number", "previous_receipt_hash"),
+            "require a positive attempt_number",
+            id="v3-missing-attempt-number",
+        ),
+        pytest.param(
+            {"attempt_number": 1, "previous_receipt_hash": "8" * 64},
+            (),
+            "must omit previous_receipt_hash",
+            id="v3-first-attempt-with-previous",
+        ),
+        pytest.param(
+            {"attempt_number": 1, "previous_receipt_hash": None},
+            (),
+            "must omit previous_receipt_hash",
+            id="v3-first-attempt-with-null-previous",
+        ),
+        pytest.param(
+            {"attempt_number": 2},
+            ("previous_receipt_hash",),
+            "require previous_receipt_hash",
+            id="v3-retry-without-previous",
+        ),
+        pytest.param(
+            {"attempt_number": 2, "previous_receipt_hash": None},
+            (),
+            "require previous_receipt_hash",
+            id="v3-retry-with-null-previous",
+        ),
+        pytest.param(
+            {"provider": "codex-file-handoff-v2"},
+            (),
+            "protocol_version and provider must use the same version",
+            id="v3-provider-mismatch",
+        ),
+    ],
+)
+def test_verify_rejects_resealed_protocol_inconsistent_receipt_attempt_metadata(
+    client,
+    tmp_path: Path,
+    updates: dict[str, Any],
+    removed_fields: tuple[str, ...],
+    error: str,
+) -> None:
+    audit_bundle = _export_completed_audit(client, tmp_path)
+    _reseal_bundled_receipt(
+        audit_bundle,
+        updates=updates,
+        removed_fields=removed_fields,
+    )
+
+    with pytest.raises(AuditBundleError, match=error):
+        verify_audit_bundle(audit_bundle)
+
+
 def test_export_rejects_mixed_draft_protocol_version(client, tmp_path) -> None:
     handoff_root, job_dir, result_bundle = _completed_sources(client, tmp_path)
     drafts_path = job_dir / "drafts.json"
@@ -205,6 +332,7 @@ def test_export_rejects_mixed_receipt_protocol_and_provider(client, tmp_path) ->
     handoff_root, job_dir, result_bundle = _completed_sources(client, tmp_path)
     _reseal_receipt(
         job_dir,
+        removed_fields=("attempt_number", "previous_receipt_hash"),
         protocol_version="1.0.0",
         provider="codex-file-handoff-v1",
     )

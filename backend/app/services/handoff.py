@@ -272,6 +272,34 @@ class HandoffReceipt(APIModel):
             raise ValueError("finalized_at must be timezone-aware")
         return value
 
+    @model_validator(mode="after")
+    def attempt_metadata_matches_protocol(self) -> HandoffReceipt:
+        if self.provider != _provider_for_protocol(self.protocol_version):
+            raise ValueError(
+                "handoff receipt protocol_version and provider must use the same version"
+            )
+        present_attempt_fields = self.model_fields_set.intersection(
+            {"attempt_number", "previous_receipt_hash"}
+        )
+        if self.protocol_version in {
+            LEGACY_HANDOFF_PROTOCOL_VERSION,
+            PREVIOUS_HANDOFF_PROTOCOL_VERSION,
+        }:
+            if present_attempt_fields:
+                raise ValueError("v1/v2 handoff receipts must omit v3 attempt metadata")
+            return self
+
+        if "attempt_number" not in present_attempt_fields or self.attempt_number is None:
+            raise ValueError("v3 handoff receipts require a positive attempt_number")
+        if self.attempt_number == 1 and "previous_receipt_hash" in present_attempt_fields:
+            raise ValueError("first v3 handoff attempt must omit previous_receipt_hash")
+        if self.attempt_number > 1 and (
+            "previous_receipt_hash" not in present_attempt_fields
+            or self.previous_receipt_hash is None
+        ):
+            raise ValueError("retried v3 handoff attempts require previous_receipt_hash")
+        return self
+
 
 class FileHandoffProvider:
     """Replay prevalidated Codex drafts through the normal committee graph."""
@@ -2833,6 +2861,13 @@ def _build_receipt(
     attempt_number: int | None = None,
     previous_receipt_hash: str | None = None,
 ) -> HandoffReceipt:
+    attempt_metadata: dict[str, Any] = {}
+    if request.protocol_version == HANDOFF_PROTOCOL_VERSION:
+        attempt_metadata["attempt_number"] = attempt_number
+        if attempt_number != 1 or previous_receipt_hash is not None:
+            attempt_metadata["previous_receipt_hash"] = previous_receipt_hash
+    elif attempt_number is not None or previous_receipt_hash is not None:
+        raise ValueError("legacy handoff receipts may not use v3 attempt metadata")
     unsigned = HandoffReceipt(
         protocol_version=request.protocol_version,
         run_id=request.run_id,
@@ -2849,9 +2884,8 @@ def _build_receipt(
         forecast_count=forecast_count,
         generated_by=bundle.generated_by,
         error=error,
-        attempt_number=attempt_number,
-        previous_receipt_hash=previous_receipt_hash,
         receipt_hash="0" * 64,
+        **attempt_metadata,
     )
     receipt_hash = _canonical_hash(unsigned.model_dump(mode="json", exclude={"receipt_hash"}))
     return unsigned.model_copy(update={"receipt_hash": receipt_hash})

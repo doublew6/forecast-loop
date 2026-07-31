@@ -34,6 +34,8 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Audit-bundle and job-execution readers now fail closed when handoff receipt
+  protocol, provider, or retry metadata is version-inconsistent.
 - Source archive creation now audits the selected Git revision with the
   built-in public-boundary policy before writing any artifact.
 - Demo Wiki fallback now activates when a local catalog has no runtime-valid
