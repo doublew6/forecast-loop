@@ -20,7 +20,7 @@ v2 writer remains finalizable after an upgrade.
 
 `pre-upgrade-v2-configurable-input.json` and
 `pre-upgrade-v2-configurable-db-seal.json` were captured independently from
-`ebe69b15060f358668a9e7fe0fab09eb883fe2e8`, the first public release commit
+`ebe69b18e5c238382a01e7dee40323e06f38fe62`, the first public release commit
 that shipped configurable-universe handoff v2. They freeze the synthetic
 `v2-compatible-universe` request at workflow/schema `0.4.0` / `0.5.0`; the
 current writer is not involved in their compatibility test.
