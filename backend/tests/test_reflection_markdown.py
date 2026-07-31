@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, time
 from pathlib import Path
 from uuid import uuid4
@@ -8,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app.models import LessonProposal, ReflectionFinding, ReflectionRun, WorkflowRun
+from app.services import reflection_markdown as reflection_markdown_service
 from app.services.evaluation import evaluate_forecast
 from app.services.reflection import (
     MarketSnapshotFact,
@@ -197,6 +199,53 @@ def test_completed_live_reflection_writes_hash_sealed_markdown_idempotently(
         )
         assert first.reflection.path.stat().st_mode & 0o222 == 0
         assert first.lessons[0].path.stat().st_mode & 0o222 == 0
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("use_default_roots", [True, False])
+def test_lesson_link_resolves_across_default_and_custom_archive_roots(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    use_default_roots: bool,
+) -> None:
+    session, reflection = _archivable_reflection(client)
+    try:
+        if use_default_roots:
+            reflections_root = tmp_path / "default" / "reflection-archives"
+            lessons_root = tmp_path / "default" / "lesson-archives"
+            monkeypatch.setattr(
+                reflection_markdown_service,
+                "DEFAULT_REFLECTIONS_ROOT",
+                reflections_root,
+            )
+            monkeypatch.setattr(
+                reflection_markdown_service,
+                "DEFAULT_LESSONS_ROOT",
+                lessons_root,
+            )
+            artifacts = write_reflection_markdown(session, reflection.id)
+        else:
+            reflections_root = tmp_path / "configured" / "records" / "reflections"
+            lessons_root = tmp_path / "configured" / "published" / "lessons"
+            artifacts = write_reflection_markdown(
+                session,
+                reflection.id,
+                reflections_root=reflections_root,
+                lessons_root=lessons_root,
+            )
+
+        lesson = artifacts.lessons[0]
+        relative_reference = Path(
+            os.path.relpath(artifacts.reflection.path, start=lesson.path.parent)
+        ).as_posix()
+        lesson_text = lesson.path.read_text(encoding="utf-8")
+
+        assert f"]({relative_reference})" in lesson_text
+        assert (lesson.path.parent / relative_reference).resolve() == (
+            artifacts.reflection.path.resolve()
+        )
     finally:
         session.close()
 

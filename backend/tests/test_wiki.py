@@ -215,7 +215,7 @@ status: draft
 """,
         encoding="utf-8",
     )
-    catalog = WikiCatalog(wiki_path)
+    catalog = WikiCatalog(wiki_path, allow_demo_fallback=False)
 
     with pytest.raises(RuntimeError, match="no active entries"):
         catalog.select_for_agent("market_news_agent")
@@ -257,6 +257,23 @@ status: demo-only
     assert [entry.id for entry in catalog.list_entries()] == ["VC-WIKI-DEMO-EXAMPLE"]
 
     local_root.mkdir()
+    (local_root / "draft.md").write_text(
+        """---
+id: VC-WIKI-LOCAL-DRAFT
+title: Local draft
+version: 0.1.0
+status: draft
+---
+# Draft
+""",
+        encoding="utf-8",
+    )
+
+    assert [entry.id for entry in catalog.list_entries()] == ["VC-WIKI-DEMO-EXAMPLE"]
+    assert [entry.id for entry in catalog.freeze().list_entries()] == [
+        "VC-WIKI-DEMO-EXAMPLE"
+    ]
+
     (local_root / "local.md").write_text(
         """---
 id: VC-WIKI-LOCAL
@@ -269,7 +286,10 @@ status: active
         encoding="utf-8",
     )
 
-    assert [entry.id for entry in catalog.list_entries()] == ["VC-WIKI-LOCAL"]
+    assert {entry.id for entry in catalog.list_entries()} == {
+        "VC-WIKI-LOCAL",
+        "VC-WIKI-LOCAL-DRAFT",
+    }
 
 
 def test_live_never_reads_the_bundled_demo_catalog(tmp_path) -> None:
@@ -294,9 +314,21 @@ status: demo-only
     )
     catalog = WikiCatalog.from_settings(settings)
 
+    assert catalog.list_entries() == []
     assert catalog.get("VC-WIKI-DEMO-EXAMPLE") is None
+    assert catalog.get("VC-WIKI-DEMO-METHODOLOGY") is None
     with pytest.raises(RuntimeError, match="no active entries"):
-        catalog.freeze(allow_demo_fallback=False)
+        catalog.freeze()
+
+    same_path_settings = settings.model_copy(
+        update={"wiki_path": bundled_root},
+    )
+    same_path_catalog = WikiCatalog.from_settings(same_path_settings)
+
+    assert same_path_catalog.list_entries() == []
+    assert same_path_catalog.get("VC-WIKI-DEMO-EXAMPLE") is None
+    with pytest.raises(RuntimeError, match="no active entries"):
+        same_path_catalog.freeze()
 
 
 def test_public_repository_contains_only_a_few_demo_entries() -> None:

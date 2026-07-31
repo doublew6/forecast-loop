@@ -38,7 +38,10 @@ make codex-prepare ARGS="\
 
 Preparation freezes the Market Universe, target sessions, evidence cutoff,
 allowed evidence IDs, Wiki citations, Agent identities, prompt version, and
-input hashes. It then creates `data/handoffs/<run-id>/` containing:
+input hashes. New packages use handoff protocol v3 and seal
+`forecast_horizons=["D1"]`; the v1 Market Universe and Evidence Snapshot still
+carry D1/D2 calendar sessions for input compatibility, but v3 creates only D1
+assignments. Preparation then creates `data/handoffs/<run-id>/` containing:
 
 - `input.json`: the immutable run package;
 - `INSTRUCTIONS.md`: the draft-stage contract;
@@ -76,6 +79,23 @@ path escapes, verifies raw and canonical hashes, validates every assignment,
 checks evidence and Wiki references, and persists the result transactionally.
 On success it writes an immutable receipt. Repeating finalize is idempotent;
 an expired or rejected package must be replaced by a newly prepared run.
+
+## Protocol compatibility
+
+Finalization dispatches from the frozen protocol, Universe identity, workflow
+version, and decision-schema version. It never reinterprets an older package
+with current defaults.
+
+| Handoff | Provider | Forecast horizons | Default Universe workflow/schema | Configurable Universe workflow/schema |
+| --- | --- | --- | --- | --- |
+| v1 | `codex-file-handoff-v1` | D1/D2 | `0.3.0` / `0.4.0` | `0.4.0` / `0.5.0` |
+| v2 | `codex-file-handoff-v2` | D1/D2 | `0.3.0` / `0.4.0` | `0.4.0` / `0.5.0` |
+| v3 | `codex-file-handoff-v3` | D1 only | `0.5.0` / `0.6.0` | `0.6.0` / `0.7.0` |
+
+The writer emits v3. Existing v1/v2 jobs remain finalizable with their
+original assignment matrix and known version pair. Unknown combinations,
+missing v3 horizon seals, or attempts to add D2 to v3 fail before workflow
+execution.
 
 ## Scheduling and deployment
 

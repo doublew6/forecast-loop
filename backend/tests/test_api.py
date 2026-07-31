@@ -17,7 +17,7 @@ from app.models import Forecast, WorkflowRun, WorkflowTask
 from app.services.prediction_status import write_prediction_prepare_receipt
 from app.services.reflection import MarketSnapshotFact, materialize_evaluation_batch
 from app.services.task_queue import EXECUTION_MANIFEST_SCHEMA
-from app.workflow import PreparedRun
+from app.workflow import CommitteeWorkflow, PreparedRun
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
@@ -215,23 +215,22 @@ def test_committee_run_latest_detail_and_meeting(client: TestClient) -> None:
     assert latest["run_id"] == run["id"]
     assert latest["as_of"].endswith("+08:00")
     assert latest["data_cutoff"].endswith("+08:00")
-    assert len(latest["forecasts"]) == 10
-    assert {item["horizon"] for item in latest["forecasts"]} == {"D1", "D2"}
+    assert len(latest["forecasts"]) == 5
+    assert {item["horizon"] for item in latest["forecasts"]} == {"D1"}
     assert {item["direction"] for item in latest["forecasts"]} <= {"up", "down"}
     assert all(not item["abstain"] for item in latest["forecasts"])
     assert all(abs(sum(item["probabilities"].values()) - 1) < 1e-6 for item in latest["forecasts"])
     assert all(item["citations"] for item in latest["forecasts"])
 
-    filtered = client.get("/api/forecasts/latest?horizon=D2").json()["forecasts"]
-    assert len(filtered) == 5
+    assert client.get("/api/forecasts/latest?horizon=D2").status_code == 404
     forecast = latest["forecasts"][0]
     assert client.get(f"/api/forecasts/{forecast['id']}").json()["id"] == forecast["id"]
 
     meeting = client.get(f"/api/meetings/{run['id']}")
     assert meeting.status_code == 200
     body = meeting.json()
-    assert len(body["opinions"]) == 60
-    assert len(body["forecasts"]) == 10
+    assert len(body["opinions"]) == 30
+    assert len(body["forecasts"]) == 5
     assert {step["id"] for step in body["workflow_steps"]} >= {
         "freeze_snapshot",
         "macro_policy_agent",
@@ -245,10 +244,10 @@ def test_committee_run_latest_detail_and_meeting(client: TestClient) -> None:
     assert not [item for item in body["opinions"] if item["agent_id"] == "quant_agent"]
     assert {item["direction"] for item in body["opinions"]} <= {"up", "down"}
     strategies = [item for item in body["opinions"] if item["agent_id"] == "strategy_agent"]
-    assert len(strategies) == 10
+    assert len(strategies) == 5
     assert all(item["weight"] == 1 for item in strategies)
     assert all(item["citations"] for item in strategies)
-    for horizon in ("D1", "D2"):
+    for horizon in ("D1",):
         contexts = [
             item["strategy_context"] for item in strategies if item["horizon"] == horizon
         ]
@@ -264,6 +263,46 @@ def test_committee_run_latest_detail_and_meeting(client: TestClient) -> None:
     critics = [item for item in body["opinions"] if item["agent_id"] == "risk_critic_agent"]
     assert all("反证检查" in item["summary"] for item in critics)
     assert {item["direction"] for item in critics} <= {"up", "down"}
+
+
+def test_latest_horizon_query_reads_the_newest_matching_historical_run(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    legacy_settings = client.app.state.settings.model_copy(
+        update={"checkpoint_path": tmp_path / "legacy-d2-checkpoint.sqlite3"}
+    )
+    legacy_workflow = CommitteeWorkflow(
+        settings=legacy_settings,
+        database=client.app.state.database,
+        provider=client.app.state.workflow.provider,
+        wiki=client.app.state.workflow.wiki,
+        runtime_mode="legacy_dual_horizon",
+    )
+    try:
+        legacy_run = legacy_workflow.run(
+            as_of=datetime.fromisoformat("2026-07-09T15:00:00+08:00")
+        )
+    finally:
+        legacy_workflow.close()
+
+    current_run = _create_run(client)
+
+    latest_d1 = client.get("/api/forecasts/latest?horizon=D1")
+    assert latest_d1.status_code == 200
+    assert latest_d1.json()["run_id"] == current_run["id"]
+    assert {item["horizon"] for item in latest_d1.json()["forecasts"]} == {"D1"}
+
+    latest_d2 = client.get("/api/forecasts/latest?horizon=D2")
+    assert latest_d2.status_code == 200
+    assert latest_d2.json()["run_id"] == legacy_run.id
+    assert {item["horizon"] for item in latest_d2.json()["forecasts"]} == {"D2"}
+
+    historical_meeting = client.get(f"/api/meetings/{legacy_run.id}")
+    assert historical_meeting.status_code == 200
+    assert {
+        item["horizon"] for item in historical_meeting.json()["forecasts"]
+    } == {"D1", "D2"}
 
 
 def test_evaluation_and_scorecards(client: TestClient) -> None:
@@ -521,11 +560,11 @@ def test_wiki_and_run_listing(client: TestClient) -> None:
     run = _create_run(client)
     runs = client.get("/api/runs").json()["items"]
     assert runs[0]["id"] == run["id"]
-    assert runs[0]["forecasts_count"] == 10
+    assert runs[0]["forecasts_count"] == 5
     wiki = client.get("/api/wiki").json()["items"]
     assert wiki
     entry = wiki[0]
-    assert entry["referenced_by_count"] == 10
+    assert entry["referenced_by_count"] == 5
     detail = client.get(f"/api/wiki/{entry['id']}")
     assert detail.status_code == 200
     assert detail.json()["body"]

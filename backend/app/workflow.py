@@ -9,7 +9,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -27,6 +27,8 @@ from .db import Database
 from .domain import (
     AGENT_BY_ID,
     AGENTS,
+    LEGACY_PREDICTION_HORIZONS,
+    PREDICTION_HORIZONS,
     Direction,
     Horizon,
     IndexDefinition,
@@ -75,6 +77,7 @@ class CommitteeState(TypedDict, total=False):
     evidence_snapshot: dict[str, Any]
     wiki_snapshot: list[dict[str, Any]]
     market_universe: dict[str, Any]
+    forecast_horizons: list[str]
     believability_snapshot_hash: str
     believability_snapshot_binding_hash: str
     believability_policy_version: str
@@ -94,11 +97,52 @@ EFFECTIVE_RESEARCH_AGENT_IDS = (
 STRATEGY_AGENT_ID = "strategy_agent"
 CRITIC_INPUT_AGENT_IDS = (*EFFECTIVE_RESEARCH_AGENT_IDS, STRATEGY_AGENT_ID)
 DYNAMIC_EVIDENCE_AGENT_IDS = (*EFFECTIVE_RESEARCH_AGENT_IDS, STRATEGY_AGENT_ID)
-WORKFLOW_VERSION = "0.3.0"
-DECISION_SCHEMA_VERSION = "0.4.0"
-CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION = "0.4.0"
-CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION = "0.5.0"
+LEGACY_WORKFLOW_VERSION = "0.3.0"
+LEGACY_DECISION_SCHEMA_VERSION = "0.4.0"
+LEGACY_CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION = "0.4.0"
+LEGACY_CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION = "0.5.0"
+WORKFLOW_VERSION = "0.5.0"
+DECISION_SCHEMA_VERSION = "0.6.0"
+CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION = "0.6.0"
+CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION = "0.7.0"
+WorkflowRuntimeMode = Literal["current", "legacy_dual_horizon"]
 DIRECTIONAL_MASS_HAIRCUT = 0.15
+
+
+def workflow_runtime_versions(
+    *,
+    uses_configurable_universe: bool,
+    runtime_mode: WorkflowRuntimeMode = "current",
+) -> tuple[str, str]:
+    """Return one supported immutable workflow/schema version pair."""
+
+    if runtime_mode == "current":
+        return (
+            (
+                CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION
+                if uses_configurable_universe
+                else WORKFLOW_VERSION
+            ),
+            (
+                CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION
+                if uses_configurable_universe
+                else DECISION_SCHEMA_VERSION
+            ),
+        )
+    if runtime_mode == "legacy_dual_horizon":
+        return (
+            (
+                LEGACY_CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION
+                if uses_configurable_universe
+                else LEGACY_WORKFLOW_VERSION
+            ),
+            (
+                LEGACY_CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION
+                if uses_configurable_universe
+                else LEGACY_DECISION_SCHEMA_VERSION
+            ),
+        )
+    raise ValueError(f"unsupported workflow runtime mode: {runtime_mode}")
 
 
 @dataclass(slots=True)
@@ -119,6 +163,11 @@ class CommitteeWorkflow:
     uses_configurable_universe = False
     workflow_version = WORKFLOW_VERSION
     decision_schema_version = DECISION_SCHEMA_VERSION
+    # Integrity tests exercise graph nodes without infrastructure. Keep their
+    # historical class fallback dual-horizon while normal instances explicitly
+    # select the current D1-only runtime below.
+    forecast_horizons = LEGACY_PREDICTION_HORIZONS
+    runtime_mode: WorkflowRuntimeMode = "legacy_dual_horizon"
 
     def __init__(
         self,
@@ -129,6 +178,7 @@ class CommitteeWorkflow:
         wiki: WikiCatalog | None = None,
         evidence_source: EvidenceSnapshotSource | None = None,
         universe: MarketUniverseSpec | None = None,
+        runtime_mode: WorkflowRuntimeMode = "current",
     ) -> None:
         self.settings = settings
         self.database = database
@@ -145,15 +195,17 @@ class CommitteeWorkflow:
             settings.market_universe_path is not None
             or self.universe.content_hash != DEFAULT_MARKET_UNIVERSE.content_hash
         )
-        self.workflow_version = (
-            CONFIGURABLE_UNIVERSE_WORKFLOW_VERSION
-            if self.uses_configurable_universe
-            else WORKFLOW_VERSION
+        self.runtime_mode = runtime_mode
+        self.forecast_horizons = (
+            PREDICTION_HORIZONS
+            if runtime_mode == "current"
+            else LEGACY_PREDICTION_HORIZONS
         )
-        self.decision_schema_version = (
-            CONFIGURABLE_UNIVERSE_DECISION_SCHEMA_VERSION
-            if self.uses_configurable_universe
-            else DECISION_SCHEMA_VERSION
+        if any(horizon not in self.universe.horizons for horizon in self.forecast_horizons):
+            raise ValueError("workflow forecast horizons must be supported by the market universe")
+        self.workflow_version, self.decision_schema_version = workflow_runtime_versions(
+            uses_configurable_universe=self.uses_configurable_universe,
+            runtime_mode=runtime_mode,
         )
         self._checkpoint_connection: sqlite3.Connection | None = None
         self.graph = self._build_graph()
@@ -191,6 +243,17 @@ class CommitteeWorkflow:
             ),
             "workflow_version": self.workflow_version,
             "decision_schema_version": self.decision_schema_version,
+            "forecast_horizons": [
+                horizon.value for horizon in self.forecast_horizons
+            ],
+            "forecast_target_count": (
+                len(self.instruments) * len(self.forecast_horizons)
+            ),
+            "draft_assignment_count": (
+                len(self.instruments)
+                * len(self.forecast_horizons)
+                * (len(EFFECTIVE_RESEARCH_AGENT_IDS) + 2)
+            ),
             "timezone": self.settings.timezone,
             "market_universe_hash": self.universe.content_hash,
             "llm_timeout_seconds": self.settings.llm_timeout_seconds,
@@ -249,7 +312,7 @@ class CommitteeWorkflow:
                 data_cutoff=evidence_snapshot.data_cutoff,
                 agent_scopes=self._believability_agent_scopes(),
                 index_codes=self.universe.codes,
-                horizons=tuple(horizon.value for horizon in self.universe.horizons),
+                horizons=tuple(horizon.value for horizon in self.forecast_horizons),
                 market_universe_hash=self.universe.content_hash,
                 required_live_target_dates=self.settings.reflection_shadow_target_dates,
                 required_approved_reflections=(
@@ -315,6 +378,10 @@ class CommitteeWorkflow:
                     "version": self.universe.version,
                     "content_hash": self.universe.content_hash,
                 }
+            if self.runtime_mode == "current":
+                hash_payload["forecast_horizons"] = [
+                    horizon.value for horizon in self.forecast_horizons
+                ]
             if frozen_external_inputs:
                 hash_payload["external_input_bindings"] = frozen_external_inputs
             input_hash = hashlib.sha256(
@@ -377,6 +444,10 @@ class CommitteeWorkflow:
             initial["external_input_bindings"] = frozen_external_inputs
         if self.uses_configurable_universe:
             initial["market_universe"] = self.universe.model_dump(mode="json")
+        if self.runtime_mode == "current":
+            initial["forecast_horizons"] = [
+                horizon.value for horizon in self.forecast_horizons
+            ]
         return PreparedRun(
             row=row,
             initial=initial,
@@ -418,6 +489,7 @@ class CommitteeWorkflow:
             if persistent.status != expected_status:
                 raise RuntimeError(f"run {run_id} was already claimed or finalized")
             try:
+                self._validate_forecast_horizons_state(prepared.initial)
                 self._validate_market_universe_state(prepared.initial)
                 if persistent.market_universe_hash != self.universe.content_hash:
                     raise RuntimeError(
@@ -695,7 +767,7 @@ class CommitteeWorkflow:
             wiki = _frozen_wiki(state)
             additions: list[dict[str, Any]] = []
             for index in self.instruments:
-                for horizon in self.universe.horizons:
+                for horizon in self.forecast_horizons:
                     draft = self.provider.research(
                         agent_id=agent_id,
                         index=index,
@@ -773,7 +845,7 @@ class CommitteeWorkflow:
         wiki = _frozen_wiki(state)
         additions: list[dict[str, Any]] = []
         for index in self.instruments:
-            for horizon in self.universe.horizons:
+            for horizon in self.forecast_horizons:
                 research_opinions = [
                     opinion
                     for opinion in state.get("opinions", [])
@@ -930,7 +1002,11 @@ class CommitteeWorkflow:
                         "raw_response": raw_response,
                     }
                 )
-        _annotate_strategy_context(additions, instruments=self.instruments)
+        _annotate_strategy_context(
+            additions,
+            instruments=self.instruments,
+            horizons=self.forecast_horizons,
+        )
         return {
             "opinions": additions,
             "workflow_steps": [_step(agent.id, agent.name, started)],
@@ -944,7 +1020,7 @@ class CommitteeWorkflow:
         wiki = _frozen_wiki(state)
         additions: list[dict[str, Any]] = []
         for index in self.instruments:
-            for horizon in self.universe.horizons:
+            for horizon in self.forecast_horizons:
                 research_opinions = [
                     opinion
                     for opinion in state.get("opinions", [])
@@ -1095,7 +1171,7 @@ class CommitteeWorkflow:
         forecasts: list[dict[str, Any]] = []
         cio_opinions: list[dict[str, Any]] = []
         for index in self.instruments:
-            for horizon in self.universe.horizons:
+            for horizon in self.forecast_horizons:
                 research_inputs = [
                     opinion
                     for opinion in state.get("opinions", [])
@@ -1311,6 +1387,21 @@ class CommitteeWorkflow:
                 "prepared run market universe no longer matches the runtime configuration"
             )
 
+    def _validate_forecast_horizons_state(self, state: CommitteeState) -> None:
+        raw = state.get("forecast_horizons")
+        if raw is None:
+            if self.runtime_mode != "legacy_dual_horizon":
+                raise RuntimeError("prepared run is missing its forecast horizon seal")
+            return
+        try:
+            frozen = tuple(Horizon(value) for value in raw)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("prepared run forecast horizon seal is invalid") from exc
+        if frozen != self.forecast_horizons:
+            raise RuntimeError(
+                "prepared run forecast horizons no longer match the runtime contract"
+            )
+
     def model_name_for_agent(self, agent_id: str) -> str:
         """Return the exact model identity used by the current agent version."""
 
@@ -1517,6 +1608,7 @@ def _annotate_strategy_context(
     opinions: list[dict[str, Any]],
     *,
     instruments: tuple[IndexDefinition, ...],
+    horizons: tuple[Horizon, ...] = LEGACY_PREDICTION_HORIZONS,
 ) -> None:
     """Derive one coherent cross-instrument allocation view for each horizon.
 
@@ -1536,7 +1628,7 @@ def _annotate_strategy_context(
         == DEFAULT_MARKET_UNIVERSE.codes
         else f"{len(instruments)} 个标的"
     )
-    for horizon in Horizon:
+    for horizon in horizons:
         rows = [item for item in opinions if item["horizon"] == horizon.value]
         if len(rows) != len(instruments):
             raise ValueError(

@@ -68,8 +68,8 @@ information sets or scoring capabilities.
 - Default targets: CSI 300, CSI 500, CSI 1000, ChiNext Index, and STAR 50.
 - Optional markets: versioned Market Universe files may define Hong Kong or US
   markets, indexes, or individual equities.
-- Horizons: cumulative return over the next two trading days as the primary
-  forecast, with the next trading day as a secondary forecast.
+- Horizons: new runs write next-trading-day (D1) forecasts only. D2 forecasts
+  sealed before the upgrade remain readable and evaluable.
 - Ex-ante direction: must be either up or down; outcomes are evaluated as up,
   small move, or down.
 - Product: a local single-user research console, not investment advice or an
@@ -230,8 +230,10 @@ system forecast has not been viewed enter the independent shadow score.
 
 ### 2. Daily Reflection
 
-Reflection processes only completed Live D1/D2 forecasts. Demo runs never
-produce formal Reflections, Lessons, or Wiki inputs.
+Reflection processes only completed Live forecasts. New runs write D1, while
+historical D2 records from before the upgrade remain readable, evaluable, and
+eligible for reflection. Demo runs never produce formal Reflections, Lessons,
+or Wiki inputs.
 
 ```bash
 make migrate

@@ -4,6 +4,8 @@ import math
 
 import pytest
 from app.domain import (
+    LEGACY_PREDICTION_HORIZONS,
+    PREDICTION_HORIZONS,
     AgentDefinition,
     Direction,
     Horizon,
@@ -16,6 +18,11 @@ from app.domain import (
     sample_volatility,
     validate_probabilities,
 )
+
+
+def test_public_prediction_horizon_contract_keeps_writes_d1_only() -> None:
+    assert PREDICTION_HORIZONS == (Horizon.D1,)
+    assert LEGACY_PREDICTION_HORIZONS == (Horizon.D1, Horizon.D2)
 
 
 def test_agent_definition_requires_explicit_role_and_source() -> None:

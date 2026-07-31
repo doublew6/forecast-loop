@@ -117,9 +117,16 @@ def _mask_non_newline_characters(match: re.Match[str]) -> str:
 
 
 class WikiCatalog:
-    def __init__(self, path: Path, *, demo_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        demo_path: Path | None = None,
+        allow_demo_fallback: bool = True,
+    ) -> None:
         self.path = path
         self.demo_path = demo_path
+        self.allow_demo_fallback = allow_demo_fallback
 
     @classmethod
     def from_settings(cls, settings: Settings) -> WikiCatalog:
@@ -132,6 +139,7 @@ class WikiCatalog:
                 if settings.use_demo_provider
                 else None
             ),
+            allow_demo_fallback=settings.use_demo_provider,
         )
 
     def documents(self, *, include_body: bool = False) -> list[WikiDocument]:
@@ -139,18 +147,34 @@ class WikiCatalog:
             self.path,
             include_body=include_body,
         )
+        if not self.allow_demo_fallback:
+            return [
+                document
+                for document in documents
+                if document.entry.status.lower() != "demo-only"
+            ]
         if (
-            not documents
+            self.allow_demo_fallback
+            and not self._has_runtime_documents(documents)
             and self.demo_path is not None
             and self.demo_path.resolve() != self.path.resolve()
         ):
-            documents = self._documents_from_path(
+            demo_documents = self._documents_from_path(
                 self.demo_path,
                 include_body=include_body,
             )
-        if not documents:
-            documents.append(self._fallback_document(include_body=include_body))
+            if self._has_runtime_documents(demo_documents):
+                documents = demo_documents
+        if self.allow_demo_fallback and not self._has_runtime_documents(documents):
+            documents = [self._fallback_document(include_body=include_body)]
         return documents
+
+    @staticmethod
+    def _has_runtime_documents(documents: list[WikiDocument]) -> bool:
+        return any(
+            document.entry.status.lower() in {"active", "demo-only"}
+            for document in documents
+        )
 
     @staticmethod
     def _documents_from_path(
@@ -414,6 +438,7 @@ class FrozenWikiCatalog(WikiCatalog):
     def __init__(self, entries: list[WikiEntryRead | dict[str, Any]]) -> None:
         self.path = Path(".")
         self.demo_path = None
+        self.allow_demo_fallback = False
         self._entries = tuple(
             WikiEntryRead.model_validate(entry).model_copy(deep=True) for entry in entries
         )

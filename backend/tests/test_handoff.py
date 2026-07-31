@@ -19,6 +19,7 @@ from app.domain import INDEXES, Horizon
 from app.main import create_app
 from app.market_universe import DEFAULT_MARKET_UNIVERSE
 from app.models import AgentOpinion, Forecast, SignalEnvelopeRecord, WorkflowRun
+from app.ports import AgentSignalValidationError
 from app.quant_contracts import (
     QuantArtifactRef,
     QuantArtifactSet,
@@ -33,6 +34,7 @@ from app.quant_contracts import (
 from app.services.handoff import (
     HANDOFF_PROTOCOL_VERSION,
     LEGACY_HANDOFF_PROTOCOL_VERSION,
+    PREVIOUS_HANDOFF_PROTOCOL_VERSION,
     finalize_handoff,
     prepare_handoff,
 )
@@ -245,6 +247,7 @@ def _write_quant_manifest(
     wrong_d1_session: bool = False,
     wrong_evidence_snapshot_hash: bool = False,
     wrong_market_universe_hash: bool = False,
+    horizons: tuple[Horizon, ...] = (Horizon.D1,),
 ) -> Path:
     snapshot = load_evidence_snapshot(settings, as_of=AS_OF)
     quant_root = root / "quant-bundle"
@@ -276,7 +279,7 @@ def _write_quant_manifest(
             else snapshot.target_sessions[0 if horizon is Horizon.D1 else 1]
         )
         for index in INDEXES
-        for horizon in Horizon
+        for horizon in horizons
     }
     model_raw = _write_json_artifact(
         quant_root / model_path,
@@ -372,7 +375,7 @@ def _write_quant_manifest(
             invalidation_conditions=("Input snapshot hash changes.",),
         )
         for index in INDEXES
-        for horizon in Horizon
+        for horizon in horizons
     ]
     if omit_last_target:
         signals.pop()
@@ -446,10 +449,11 @@ def test_prepare_creates_awaiting_run_and_complete_file_package(tmp_path: Path) 
     assert request["request_hash"]
     assert request["mode"] == "demo"
     assert request["protocol_version"] == HANDOFF_PROTOCOL_VERSION
-    assert request["provider"] == "codex-file-handoff-v2"
+    assert request["provider"] == "codex-file-handoff-v3"
+    assert request["initial_state"]["forecast_horizons"] == ["D1"]
     instructions = (job_dir / "INSTRUCTIONS.md").read_text(encoding="utf-8")
     assert instructions.startswith("# forecast-loop Codex 文件交接任务")
-    assert len(request["assignments"]) == 50
+    assert len(request["assignments"]) == 25
     assert (
         len(
             {
@@ -457,8 +461,9 @@ def test_prepare_creates_awaiting_run_and_complete_file_package(tmp_path: Path) 
                 for item in request["assignments"]
             }
         )
-        == 50
+        == 25
     )
+    assert {item["horizon"] for item in request["assignments"]} == {"D1"}
     assert {item["agent_id"] for item in request["assignments"]} == {
         "macro_policy_agent",
         "market_news_agent",
@@ -571,12 +576,12 @@ def test_quant_manifest_is_bound_persisted_as_shadow_and_survives_finalize(
     external = request["initial_state"]["external_input_bindings"]["quant_agent"]
     quant_audit = request["initial_state"]["data_quality"]["quant"]
 
-    assert len(request["assignments"]) == 50
+    assert len(request["assignments"]) == 25
     assert "quant_agent" not in {assignment["agent_id"] for assignment in request["assignments"]}
     assert external["agent_version"] == "0.3.0"
     assert external["participation_mode"] == "shadow"
     assert external["schema_version"] == "forecast-loop.quant-run-input-binding/v1"
-    assert external["signal_count"] == 10
+    assert external["signal_count"] == 5
     assert external["bundle_content_hash"] == manifest["content_hash"]
     assert external["manifest_sha256"] == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     assert (
@@ -592,7 +597,7 @@ def test_quant_manifest_is_bound_persisted_as_shadow_and_survives_finalize(
     assert external["decision_weight_total"] == 0
     assert external["activation_status"] == "shadow_locked"
     assert quant_audit["routing_lane"] == "shadow_benchmark"
-    assert quant_audit["signal_count"] == 10
+    assert quant_audit["signal_count"] == 5
     assert quant_audit["decision_weight_total"] == 0
     assert (
         quant_audit["market_universe_content_hash"]
@@ -613,9 +618,9 @@ def test_quant_manifest_is_bound_persisted_as_shadow_and_survives_finalize(
                     SignalEnvelopeRecord.horizon,
                 )
             ).all()
-            assert len(records) == 10
+            assert len(records) == 5
             assert {(record.index_code, record.horizon) for record in records} == {
-                (index.code, horizon.value) for index in INDEXES for horizon in Horizon
+                (index.code, Horizon.D1.value) for index in INDEXES
             }
             assert {record.agent_id for record in records} == {"quant_agent"}
             assert {record.agent_version for record in records} == {"0.3.0"}
@@ -650,11 +655,11 @@ def test_quant_manifest_is_bound_persisted_as_shadow_and_survives_finalize(
                 .select_from(SignalEnvelopeRecord)
                 .where(SignalEnvelopeRecord.run_id == request["run_id"])
             )
-            assert signal_count == 10
+            assert signal_count == 5
             forecasts = session.scalars(
                 select(Forecast).where(Forecast.run_id == request["run_id"])
             ).all()
-            assert len(forecasts) == 10
+            assert len(forecasts) == 5
             assert all(
                 "只读 shadow 输入" in forecast.rationale
                 and "正式决策权重为0" in forecast.rationale
@@ -662,7 +667,7 @@ def test_quant_manifest_is_bound_persisted_as_shadow_and_survives_finalize(
             )
     finally:
         database.dispose()
-    assert _row_counts(settings, request["run_id"]) == ("completed", 60, 10)
+    assert _row_counts(settings, request["run_id"]) == ("completed", 30, 5)
 
 
 def test_quant_handoff_evening_deadline_precedes_d1_target(
@@ -694,7 +699,7 @@ def test_quant_handoff_evening_deadline_precedes_d1_target(
                     SignalEnvelopeRecord.run_id == request["run_id"]
                 )
             ).all()
-            assert len(records) == 10
+            assert len(records) == 5
             assert {
                 datetime.fromisoformat(record.envelope["submission_deadline"]).date()
                 for record in records
@@ -706,7 +711,7 @@ def test_quant_handoff_evening_deadline_precedes_d1_target(
 @pytest.mark.parametrize(
     ("omit_last_target", "wrong_d1_session", "error_pattern"),
     [
-        (True, False, "exactly 5 indexes"),
+        (True, False, "exactly match bundle target indexes|exactly 5 indexes"),
         (False, True, "frozen evidence sessions"),
     ],
 )
@@ -724,7 +729,10 @@ def test_quant_manifest_target_matrix_must_match_frozen_evidence(
         wrong_d1_session=wrong_d1_session,
     )
 
-    with pytest.raises(ValueError, match=error_pattern):
+    with pytest.raises(
+        (ValueError, AgentSignalValidationError),
+        match=error_pattern,
+    ):
         prepare_handoff(
             settings,
             as_of=AS_OF,
@@ -839,7 +847,7 @@ def test_quant_manifest_cannot_be_replayed_into_another_run(
                 "awaiting_draft",
                 "failed",
             ]
-            assert len(records) == 10
+            assert len(records) == 5
             assert {record.run_id for record in records} == {first_run_id}
     finally:
         database.dispose()
@@ -883,7 +891,7 @@ def test_finalize_persists_exact_committee_and_binary_forecasts(tmp_path: Path) 
     receipt = finalize_handoff(settings, job_dir, now=FINALIZED_AT)
 
     run_id = bundle["run_id"]
-    assert _row_counts(settings, run_id) == ("completed", 60, 10)
+    assert _row_counts(settings, run_id) == ("completed", 30, 5)
     assert (job_dir / "receipt.json").is_file()
     receipt_payload = receipt.model_dump(mode="json") if hasattr(receipt, "model_dump") else receipt
     assert receipt_payload["run_id"] == run_id
@@ -902,8 +910,8 @@ def test_finalize_persists_exact_committee_and_binary_forecasts(tmp_path: Path) 
             assert {forecast.direction for forecast in forecasts} <= {"up", "down"}
             assert {opinion.direction for opinion in opinions} <= {"up", "down"}
             file_opinions = [opinion for opinion in opinions if opinion.agent_id != "cio_agent"]
-            assert len(file_opinions) == 50
-            assert {opinion.model_name for opinion in file_opinions} == {"codex-file-handoff-v2"}
+            assert len(file_opinions) == 25
+            assert {opinion.model_name for opinion in file_opinions} == {"codex-file-handoff-v3"}
     finally:
         database.dispose()
 
@@ -956,6 +964,102 @@ def test_legacy_v1_package_keeps_original_instructions_and_finalizes(
     assert _row_counts(settings, request["run_id"]) == ("completed", 60, 10)
 
 
+def test_frozen_v2_package_keeps_dual_horizon_runtime_and_finalizes(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    job_dir = prepare_handoff(
+        settings,
+        as_of=AS_OF,
+        now=PREPARED_AT,
+        protocol_version=PREVIOUS_HANDOFF_PROTOCOL_VERSION,
+    )
+    request = _read_request(job_dir)
+
+    assert request["protocol_version"] == "2.0.0"
+    assert request["provider"] == "codex-file-handoff-v2"
+    assert request["workflow_version"] == "0.3.0"
+    assert request["decision_schema_version"] == "0.4.0"
+    assert "forecast_horizons" not in request["initial_state"]
+    assert len(request["assignments"]) == 50
+    assert {item["horizon"] for item in request["assignments"]} == {"D1", "D2"}
+    assert all(item["agent_brief"] for item in request["assignments"])
+
+    bundle = _draft_bundle(request)
+    _write_drafts(job_dir, bundle)
+    receipt = finalize_handoff(settings, job_dir, now=FINALIZED_AT)
+
+    assert receipt.protocol_version == "2.0.0"
+    assert receipt.provider == "codex-file-handoff-v2"
+    assert _row_counts(settings, request["run_id"]) == ("completed", 60, 10)
+
+
+def test_frozen_v2_configurable_universe_uses_its_known_version_pair(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    universe_payload = DEFAULT_MARKET_UNIVERSE.model_dump(
+        mode="json",
+        exclude={"content_hash"},
+    )
+    universe_payload["universe_id"] = "v2-compatible-universe"
+    universe_payload["version"] = "1.0.0"
+    universe_path = tmp_path / "v2-universe.json"
+    universe_path.write_text(
+        json.dumps(universe_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    settings = settings.model_copy(
+        update={"market_universe_path": universe_path}
+    )
+
+    job_dir = prepare_handoff(
+        settings,
+        as_of=AS_OF,
+        now=PREPARED_AT,
+        protocol_version=PREVIOUS_HANDOFF_PROTOCOL_VERSION,
+    )
+    request = _read_request(job_dir)
+
+    assert request["workflow_version"] == "0.4.0"
+    assert request["decision_schema_version"] == "0.5.0"
+    assert request["initial_state"]["market_universe"]["universe_id"] == (
+        "v2-compatible-universe"
+    )
+
+    bundle = _draft_bundle(request)
+    _write_drafts(job_dir, bundle)
+    finalize_handoff(settings, job_dir, now=FINALIZED_AT)
+
+    assert _row_counts(settings, request["run_id"]) == ("completed", 60, 10)
+
+
+def test_unknown_frozen_v2_runtime_pair_fails_before_execution_or_receipt(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    job_dir = prepare_handoff(
+        settings,
+        as_of=AS_OF,
+        now=PREPARED_AT,
+        protocol_version=PREVIOUS_HANDOFF_PROTOCOL_VERSION,
+    )
+    request = _read_request(job_dir)
+    request["workflow_version"] = "99.0.0"
+    input_path = job_dir / "input.json"
+    input_path.chmod(0o600)
+    input_path.write_text(
+        json.dumps(request, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="runtime versions changed after prepare"):
+        finalize_handoff(settings, job_dir, now=FINALIZED_AT)
+
+    assert _row_counts(settings, request["run_id"]) == ("awaiting_draft", 0, 0)
+    assert not (job_dir / "receipt.json").exists()
+
+
 def test_duplicate_finalize_is_rejected_without_duplicate_rows(tmp_path: Path) -> None:
     settings, job_dir, bundle = _prepare_valid_bundle(tmp_path)
     finalize_handoff(settings, job_dir, now=FINALIZED_AT)
@@ -964,7 +1068,7 @@ def test_duplicate_finalize_is_rejected_without_duplicate_rows(tmp_path: Path) -
     with pytest.raises((RuntimeError, ValueError), match="already|finalized|status|claim"):
         finalize_handoff(settings, job_dir, now=FINALIZED_AT)
 
-    assert _row_counts(settings, bundle["run_id"]) == before == ("completed", 60, 10)
+    assert _row_counts(settings, bundle["run_id"]) == before == ("completed", 30, 5)
 
 
 def test_input_tamper_is_rejected_against_database_seal(tmp_path: Path) -> None:
@@ -1012,7 +1116,7 @@ def test_live_prepare_is_blocked_before_market_close(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("mutation", "error_pattern"),
     [
-        ("missing", "50|missing|identit"),
+        ("missing", "25|missing|identit"),
         ("wrong_wiki", "Wiki|wiki|entry"),
         ("wrong_protocol", "protocol"),
         ("neutral_direction", "direction|neutral"),

@@ -13,10 +13,12 @@ from app.services.provider import LangChainResearchProvider
 from app.services.snapshot import load_evidence_snapshot
 from app.services.wiki import WikiCatalog
 from app.workflow import (
+    WORKFLOW_VERSION,
     CommitteeWorkflow,
     _apply_symmetric_haircut,
     _bind_evidence_citations,
     _citation_matches_evidence,
+    workflow_runtime_versions,
 )
 from pydantic import ValidationError
 
@@ -597,6 +599,19 @@ def test_model_identity_distinguishes_llm_research_from_deterministic_cio(tmp_pa
     assert workflow._model_name_for_agent("macro_policy_agent") == "actual-llm-model"
     assert (
         workflow._model_name_for_agent("cio_agent")
-        == "deterministic-committee-aggregation-v0.3.0"
+        == f"deterministic-committee-aggregation-v{WORKFLOW_VERSION}"
     )
     assert workflow._model_name_for_agent("quant_agent") == "unavailable-no-quant-signal-v1"
+
+
+def test_supported_workflow_runtime_profiles_have_unique_version_pairs() -> None:
+    profiles = {
+        workflow_runtime_versions(
+            uses_configurable_universe=uses_configurable_universe,
+            runtime_mode=runtime_mode,
+        )
+        for uses_configurable_universe in (False, True)
+        for runtime_mode in ("current", "legacy_dual_horizon")
+    }
+
+    assert len(profiles) == 4

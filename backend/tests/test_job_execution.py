@@ -112,7 +112,7 @@ def _assignments() -> list[dict[str, Any]]:
     )
     for agent_id, role in agents:
         for index in ("000001", "000016", "000300", "000905", "399006"):
-            for horizon in ("D1", "D2"):
+            for horizon in ("D1",):
                 assignments.append(
                     {
                         "agent_id": agent_id,
@@ -130,7 +130,7 @@ def _assignments() -> list[dict[str, Any]]:
                         "allowed_evidence_item_ids": [],
                     }
                 )
-    assert len(assignments) == 50
+    assert len(assignments) == 25
     return assignments
 
 
@@ -143,9 +143,9 @@ def _prepared_handoff(project: Path) -> tuple[Path, HandoffRequest]:
         prepared_at=NOW,
         finalize_deadline=NOW + timedelta(hours=2),
         input_hash="b" * 64,
-        workflow_version="test",
-        decision_schema_version="test",
-        initial_state={},
+        workflow_version="0.5.0",
+        decision_schema_version="0.6.0",
+        initial_state={"forecast_horizons": ["D1"]},
         assignments=_assignments(),
         request_hash="0" * 64,
     )
@@ -197,7 +197,7 @@ def _write_drafts(directory: Path, request: HandoffRequest) -> HandoffDraftBundl
         )
     bundle = HandoffDraftBundle.model_validate(
         {
-            "protocol_version": "1.0.0",
+            "protocol_version": request.protocol_version,
             "run_id": str(request.run_id),
             "input_hash": request.input_hash,
             "request_hash": request.request_hash,
@@ -225,18 +225,30 @@ def _write_receipt(
 ) -> HandoffReceipt:
     input_raw = (directory / "input.json").read_bytes()
     drafts_raw = (directory / "drafts.json").read_bytes()
+    target_count = len(
+        {
+            (assignment.index_code, assignment.horizon.value)
+            for assignment in request.assignments
+        }
+    )
     unsigned = HandoffReceipt(
+        protocol_version=request.protocol_version,
         run_id=request.run_id,
         status=status,
         finalized_at=NOW + timedelta(minutes=10),
+        provider=request.provider,
         input_hash=request.input_hash,
         request_hash=request.request_hash,
         request_raw_hash=hashlib.sha256(input_raw).hexdigest(),
         drafts_hash=_canonical_hash(bundle.model_dump(mode="json")),
         drafts_raw_hash=hashlib.sha256(drafts_raw).hexdigest(),
         output_hash="c" * 64 if status == "completed" else None,
-        opinion_count=60 if status == "completed" else 0,
-        forecast_count=10 if status == "completed" else 0,
+        opinion_count=(
+            len(request.assignments) + target_count
+            if status == "completed"
+            else 0
+        ),
+        forecast_count=target_count if status == "completed" else 0,
         generated_by=bundle.generated_by,
         error=None if status == "completed" else "deterministic finalizer failed",
         receipt_hash="0" * 64,

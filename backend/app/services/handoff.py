@@ -47,8 +47,14 @@ from ..workflow import (
     CommitteeState,
     CommitteeWorkflow,
     PreparedRun,
+    WorkflowRuntimeMode,
+    workflow_runtime_versions,
 )
-from .provider import CODEX_FILE_PROVIDER_NAME, LEGACY_CODEX_FILE_PROVIDER_NAME
+from .provider import (
+    CODEX_FILE_PROVIDER_NAME,
+    LEGACY_CODEX_FILE_PROVIDER_NAME,
+    PREVIOUS_CODEX_FILE_PROVIDER_NAME,
+)
 from .quant_signal import accept_quant_candidate
 from .schema_readiness import require_schema_current
 from .signal_contract import persist_signal_envelope
@@ -60,11 +66,17 @@ from .snapshot import (
 from .wiki import FrozenWikiCatalog, WikiCatalog
 
 LEGACY_HANDOFF_PROTOCOL_VERSION = "1.0.0"
-HANDOFF_PROTOCOL_VERSION = "2.0.0"
+PREVIOUS_HANDOFF_PROTOCOL_VERSION = "2.0.0"
+HANDOFF_PROTOCOL_VERSION = "3.0.0"
 LEGACY_HANDOFF_PROMPT_VERSION = LEGACY_CODEX_FILE_PROVIDER_NAME
+PREVIOUS_HANDOFF_PROMPT_VERSION = PREVIOUS_CODEX_FILE_PROVIDER_NAME
 HANDOFF_PROMPT_VERSION = CODEX_FILE_PROVIDER_NAME
-HandoffProtocolVersion = Literal["1.0.0", "2.0.0"]
-HandoffProviderName = Literal["codex-file-handoff-v1", "codex-file-handoff-v2"]
+HandoffProtocolVersion = Literal["1.0.0", "2.0.0", "3.0.0"]
+HandoffProviderName = Literal[
+    "codex-file-handoff-v1",
+    "codex-file-handoff-v2",
+    "codex-file-handoff-v3",
+]
 HANDOFF_WINDOW = timedelta(hours=8)
 MAX_JSON_BYTES = 25 * 1024 * 1024
 RESEARCH_AGENT_IDS = tuple(EFFECTIVE_RESEARCH_AGENT_IDS)
@@ -150,7 +162,7 @@ class HandoffRequest(APIModel):
         expected_provider = _provider_for_protocol(self.protocol_version)
         if self.provider != expected_provider:
             raise ValueError("handoff protocol_version and provider must use the same version")
-        if self.protocol_version == HANDOFF_PROTOCOL_VERSION:
+        if self.protocol_version != LEGACY_HANDOFF_PROTOCOL_VERSION:
             missing_briefs = [
                 assignment.identity
                 for assignment in self.assignments
@@ -158,9 +170,15 @@ class HandoffRequest(APIModel):
             ]
             if missing_briefs:
                 raise ValueError(
-                    "v2 handoff assignments must freeze an agent_brief; "
+                    "v2/v3 handoff assignments must freeze an agent_brief; "
                     f"missing={missing_briefs}"
                 )
+        _validate_handoff_runtime_versions(
+            protocol_version=self.protocol_version,
+            initial_state=self.initial_state,
+            workflow_version=self.workflow_version,
+            decision_schema_version=self.decision_schema_version,
+        )
         return self
 
 
@@ -328,6 +346,8 @@ def prepare_handoff(
     job_dir: Path | None = None
     try:
         require_schema_current(database.engine)
+        runtime_mode = _runtime_mode_for_protocol(protocol_version)
+        forecast_horizons = _forecast_horizons_for_protocol(protocol_version)
         quant_input = (
             _prepare_quant_input(
                 settings,
@@ -335,6 +355,7 @@ def prepare_handoff(
                 as_of=as_of,
                 accepted_at=prepared_at,
                 evidence_source=evidence_source,
+                forecast_horizons=forecast_horizons,
             )
             if quant_manifest_path is not None
             else None
@@ -347,6 +368,7 @@ def prepare_handoff(
             provider=provider,
             wiki=WikiCatalog.from_settings(settings),
             evidence_source=evidence_source,
+            runtime_mode=runtime_mode,
         )
         prepared = workflow.prepare_run(
             as_of=as_of,
@@ -578,12 +600,14 @@ def finalize_handoff(
             bundle.drafts,
             provider_name=request.provider,
         )
+        runtime_mode = _runtime_mode_for_protocol(request.protocol_version)
         workflow = CommitteeWorkflow(
             settings=settings,
             database=database,
             provider=provider,
             wiki=FrozenWikiCatalog(initial["wiki_snapshot"]),
             universe=universe,
+            runtime_mode=runtime_mode,
         )
         if (
             request.workflow_version != workflow.workflow_version
@@ -655,6 +679,7 @@ def _expected_assignments(
     wiki = FrozenWikiCatalog(state["wiki_snapshot"])
     universe = _universe_from_state(state)
     instruments = universe.definitions()
+    forecast_horizons = _forecast_horizons_for_protocol(protocol_version)
     target_dates = {
         Horizon.D1: snapshot.target_sessions[0].isoformat(),
         Horizon.D2: snapshot.target_sessions[1].isoformat(),
@@ -679,7 +704,7 @@ def _expected_assignments(
                 for item in snapshot.items
                 if not item.entities or index.code in item.entities
             ]
-            for horizon in universe.horizons:
+            for horizon in forecast_horizons:
                 assignments.append(
                     HandoffAssignment(
                         agent_id=agent_id,
@@ -693,7 +718,7 @@ def _expected_assignments(
                                 index.agent_brief_for(agent_id)
                                 or AGENT_BY_ID[agent_id].role
                             )
-                            if protocol_version == HANDOFF_PROTOCOL_VERSION
+                            if protocol_version != LEGACY_HANDOFF_PROTOCOL_VERSION
                             else None
                         ),
                         wiki_entry_id=entry.id,
@@ -704,7 +729,9 @@ def _expected_assignments(
                         allowed_evidence_item_ids=([] if role == "critic" else relevant_evidence),
                     )
                 )
-    expected_count = len(DRAFT_AGENT_IDS) * len(instruments) * len(universe.horizons)
+    expected_count = (
+        len(DRAFT_AGENT_IDS) * len(instruments) * len(forecast_horizons)
+    )
     if len(assignments) != expected_count:  # pragma: no cover - domain shape assertion
         raise RuntimeError(
             f"expected {expected_count} Codex assignments, got {len(assignments)}"
@@ -726,6 +753,7 @@ def _prepare_quant_input(
     as_of: datetime | None,
     accepted_at: datetime,
     evidence_source: EvidenceSnapshotSource | None = None,
+    forecast_horizons: tuple[Horizon, ...],
 ) -> _PreparedQuantInput:
     """Verify one complete Quant bundle against the frozen committee target matrix."""
 
@@ -765,7 +793,7 @@ def _prepare_quant_input(
             data_cutoff=snapshot.data_cutoff,
         )
         for index in instruments
-        for horizon in universe.horizons
+        for horizon in forecast_horizons
     }
     by_identity: dict[tuple[str, str], QuantSignalCandidate] = {}
     for candidate in candidates:
@@ -781,7 +809,10 @@ def _prepare_quant_input(
         missing = sorted(set(expected_targets) - set(by_identity))
         extra = sorted(set(by_identity) - set(expected_targets))
         expected_matrix = (
-            "exactly 5 indexes x D1/D2"
+            (
+                "exactly 5 indexes x "
+                + "/".join(horizon.value for horizon in forecast_horizons)
+            )
             if universe.content_hash == DEFAULT_MARKET_UNIVERSE.content_hash
             else "the configured instrument matrix"
         )
@@ -801,9 +832,9 @@ def _prepare_quant_input(
     ordered = tuple(
         by_identity[(index.code, horizon.value)]
         for index in instruments
-        for horizon in universe.horizons
+        for horizon in forecast_horizons
     )
-    expected_count = len(instruments) * len(universe.horizons)
+    expected_count = len(instruments) * len(forecast_horizons)
     if len(ordered) != expected_count:  # pragma: no cover - domain shape assertion.
         raise RuntimeError(f"expected {expected_count} Quant targets, got {len(ordered)}")
     if any(candidate.draft.submitted_at > accepted_at for candidate in ordered):
@@ -1283,9 +1314,59 @@ def _provider_for_protocol(
 ) -> HandoffProviderName:
     if protocol_version == LEGACY_HANDOFF_PROTOCOL_VERSION:
         return LEGACY_CODEX_FILE_PROVIDER_NAME
+    if protocol_version == PREVIOUS_HANDOFF_PROTOCOL_VERSION:
+        return PREVIOUS_CODEX_FILE_PROVIDER_NAME
     if protocol_version == HANDOFF_PROTOCOL_VERSION:
         return CODEX_FILE_PROVIDER_NAME
     raise ValueError(f"unsupported handoff protocol_version: {protocol_version}")
+
+
+def _runtime_mode_for_protocol(
+    protocol_version: HandoffProtocolVersion,
+) -> WorkflowRuntimeMode:
+    if protocol_version in {
+        LEGACY_HANDOFF_PROTOCOL_VERSION,
+        PREVIOUS_HANDOFF_PROTOCOL_VERSION,
+    }:
+        return "legacy_dual_horizon"
+    if protocol_version == HANDOFF_PROTOCOL_VERSION:
+        return "current"
+    raise ValueError(f"unsupported handoff protocol_version: {protocol_version}")
+
+
+def _forecast_horizons_for_protocol(
+    protocol_version: HandoffProtocolVersion,
+) -> tuple[Horizon, ...]:
+    return (
+        (Horizon.D1,)
+        if _runtime_mode_for_protocol(protocol_version) == "current"
+        else (Horizon.D1, Horizon.D2)
+    )
+
+
+def _validate_handoff_runtime_versions(
+    *,
+    protocol_version: HandoffProtocolVersion,
+    initial_state: dict[str, Any],
+    workflow_version: str,
+    decision_schema_version: str,
+) -> None:
+    runtime_mode = _runtime_mode_for_protocol(protocol_version)
+    frozen_horizons = initial_state.get("forecast_horizons")
+    if runtime_mode == "current":
+        if frozen_horizons != [Horizon.D1.value]:
+            raise ValueError("v3 handoff must freeze the D1 forecast horizon")
+    elif frozen_horizons not in (None, [Horizon.D1.value, Horizon.D2.value]):
+        raise ValueError("v1/v2 handoff forecast horizon seal must remain D1/D2")
+    expected = workflow_runtime_versions(
+        uses_configurable_universe="market_universe" in initial_state,
+        runtime_mode=runtime_mode,
+    )
+    if (workflow_version, decision_schema_version) != expected:
+        raise ValueError(
+            "handoff runtime versions changed after prepare; "
+            "restore the prepared workflow and decision schema versions"
+        )
 
 
 def _validate_execution_mode(settings: Settings) -> None:

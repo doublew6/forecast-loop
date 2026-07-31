@@ -164,7 +164,8 @@ def test_user_judgment_blind_target_seal_and_private_wiki(
     target_response = client.get("/api/user-judgments/targets")
     assert target_response.status_code == 200
     targets = target_response.json()["items"]
-    assert len(targets) == 10
+    assert len(targets) == 5
+    assert {item["horizon"] for item in targets} == {"D1"}
     assert all("direction" not in item for item in targets)
     target = targets[0]
     assert target["submission_open"] is True

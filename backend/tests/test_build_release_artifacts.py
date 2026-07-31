@@ -188,6 +188,53 @@ def test_source_archive_is_deterministic_for_a_fixed_revision(tmp_path: Path) ->
     assert first.read_bytes() == second.read_bytes()
 
 
+def test_source_archive_rejects_private_revision_without_writing_artifact(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "source"
+    repository.mkdir()
+    _git(repository, "init", "--initial-branch=main")
+    _git(repository, "config", "user.name", "Release Test")
+    _git(repository, "config", "user.email", "release@example.com")
+    (repository / "README.md").write_text("release fixture\n", encoding="utf-8")
+    _git(repository, "add", "README.md")
+    _git(repository, "commit", "-m", "public fixture")
+    public_revision = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    private_document = repository / "docs" / "private" / "policy.md"
+    private_document.parent.mkdir(parents=True)
+    private_document.write_text("safe-looking private policy\n", encoding="utf-8")
+    _git(repository, "add", "docs/private/policy.md")
+    _git(repository, "commit", "-m", "private fixture")
+
+    public_output = tmp_path / "public.tar.gz"
+    build_source_archive(
+        repository,
+        public_output,
+        version="0.1.0",
+        epoch=1767225600,
+        revision=public_revision,
+    )
+    assert public_output.is_file()
+
+    blocked_output = tmp_path / "blocked.tar.gz"
+    with pytest.raises(ReleaseBuildError, match="public-boundary audit"):
+        build_source_archive(
+            repository,
+            blocked_output,
+            version="0.1.0",
+            epoch=1767225600,
+            revision="HEAD",
+        )
+    assert not blocked_output.exists()
+
+
 def test_release_builder_compares_two_builds_and_writes_checksums(
     tmp_path: Path,
 ) -> None:

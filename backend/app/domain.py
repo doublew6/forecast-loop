@@ -19,6 +19,10 @@ class Horizon(StrEnum):
     D2 = "D2"
 
 
+PREDICTION_HORIZONS = (Horizon.D1,)
+LEGACY_PREDICTION_HORIZONS = (Horizon.D1, Horizon.D2)
+
+
 class RunStatus(StrEnum):
     AWAITING_DRAFT = "awaiting_draft"
     QUEUED = "queued"

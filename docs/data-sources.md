@@ -40,7 +40,8 @@ Demo provider 用于本地演示和端到端测试。Demo 数据必须显著标�
 用于 D1，第二个用于 D2。工作日推算只允许用于 Demo；正式快照应由交易日历 provider
 给出，避免把调休或临时休市当成目标日。快照还须保存该 provider 的原始 URL、
 source_hash、observed_at、ingested_at，以及 `[base_session, D1, D2]` 三个 sessions；
-服务端要求它们与快照日期字段完全一致。
+服务端要求它们与快照日期字段完全一致。这是 Evidence Snapshot v1 的历史兼容包络；
+当前 handoff v3 只消费 D1，第二个 session 仅用于验证旧 D2 记录，不会触发新的 D2 写入。
 
 ### 资讯 provider
 
