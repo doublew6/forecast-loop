@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Literal
 
 from app.config import Settings
-from app.services.handoff import finalize_handoff, prepare_handoff
+from app.services.handoff import (
+    finalize_handoff,
+    prepare_handoff,
+    retry_failed_handoff,
+)
 
 
 def main() -> None:
@@ -31,6 +35,15 @@ def main() -> None:
     finalize.add_argument("--output-root", type=Path, default=None)
     finalize.add_argument("job_dir", type=Path)
 
+    retry = commands.add_parser(
+        "retry",
+        help="Re-arm one sealed failed v3 run without admitting inputs again",
+    )
+    retry.add_argument("--mode", choices=("demo", "live"), default=None)
+    retry.add_argument("--snapshot", type=Path, default=None)
+    retry.add_argument("--output-root", type=Path, default=None)
+    retry.add_argument("job_dir", type=Path)
+
     args = parser.parse_args()
     if args.command == "prepare":
         mode = args.mode or _configured_mode(Settings())
@@ -47,6 +60,16 @@ def main() -> None:
 
     mode = args.mode or _infer_mode(args.job_dir)
     settings = _settings(mode, snapshot=args.snapshot, output_root=args.output_root)
+    if args.command == "retry":
+        job_dir = retry_failed_handoff(
+            settings,
+            args.job_dir,
+            handoff_root=args.output_root,
+        )
+        print(job_dir)
+        print(f"Codex should now refill: {job_dir / 'drafts.json'}")
+        return
+
     receipt = finalize_handoff(
         settings,
         args.job_dir,

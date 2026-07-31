@@ -77,8 +77,76 @@ make codex-finalize ARGS="--mode live ./data/handoffs/<run-id>"
 Finalize reopens the package through its configured root, rejects symlinks and
 path escapes, verifies raw and canonical hashes, validates every assignment,
 checks evidence and Wiki references, and persists the result transactionally.
-On success it writes an immutable receipt. Repeating finalize is idempotent;
-an expired or rejected package must be replaced by a newly prepared run.
+For v3, finalize first seals the exact draft hashes, attempt/checkpoint
+identity, finalize time, failed-attempt history, and retry-transition chain as
+`validating` in the database before claiming execution. The v3 execution token
+must still match at graph claim, success, and failure publication, so an
+executor from an older attempt cannot overwrite its successor. On success it
+writes an immutable receipt. Repeating finalize for a completed run verifies the
+frozen drafts, database output seal, counts, and receipt, then returns the same
+receipt without running the graph again. If workflow completion committed
+before the terminal output seal or receipt publication, finalize completes the
+seal and reconstructs the exact receipt from those durable inputs. A
+conflicting receipt or changed draft is rejected. Every completed recovery
+path also reopens `drafts.json` without following symlinks, applies mode
+`0400`, and syncs the descriptor before returning an existing or reconstructed
+receipt.
+
+## Retry a failed v3 attempt
+
+An execution failure is different from an invalid draft. Validation errors
+leave the run in `awaiting_draft`, so the writer can correct `drafts.json` and
+run finalize again. If execution claimed the run and then failed, retry the
+sealed v3 handoff explicitly:
+
+```bash
+make codex-retry ARGS="--mode demo ./data/handoffs/<run-id>"
+make codex-retry ARGS="--mode live ./data/handoffs/<run-id>"
+```
+
+Retry verifies the failed database seal and receipt, requires zero persisted
+opinions and forecasts, rejects an active replacement run, and re-verifies all
+immutable Quant SignalEnvelope rows. If a process exited after committing the
+top-level failure but before publishing/sealing its receipt, retry first
+finishes that failed-attempt seal from the durable `validating` audit. If a
+process exited after claiming a v3 run as `running`, the exclusive job lock
+allows retry to convert only a zero-output, unexpired, audit-matching runner
+into an explicit interrupted failure before sealing it. This recovery remains
+a local CLI operation and never applies while a live finalizer still holds the
+job lock. The lock is held on the job-directory inode, not on a replaceable
+named lock file.
+
+Retry then archives the failed `drafts.json` and `receipt.json` without
+overwrite under:
+
+```text
+data/handoffs/<run-id>/attempts/0001/
+```
+
+The same `WorkflowRun`, `input.json`, request hash, evidence/Wiki snapshot,
+Quant source records, and original finalize deadline are retained. Only the
+attempt number and checkpoint thread advance. The writer must create a new
+`drafts.json`, after which normal finalize applies. Retry never admits the
+Quant bundle again, never extends the deadline, and never creates a replacement
+run. Every `failed -> awaiting_draft` transition is append-only and hash-linked
+to the preceding failed attempt, receipt, and transition. Archive files and
+their directories are synced before the database is re-armed, so a crash can
+be resumed from an identical working/archive copy without admitting different
+bytes. A transition cannot predate either the failed execution completion or
+its receipt finalization. Re-arm acquires a real SQLite write reservation (or
+row lock on PostgreSQL), merges the latest unrelated `data_quality`, and
+compare-and-swaps the exact failed-attempt hashes and execution token. Expired,
+completed, non-v3, partially persisted, tampered, or superseded runs fail
+closed.
+
+The first v3 attempt cannot finalize before `prepared_at`. Later attempts bind
+both `drafts.json.generated_at` and the sealed finalize time to the latest
+retry transition, so artifacts from the preceding attempt epoch cannot be
+admitted. The same chronology is rechecked when a completed receipt is
+returned or reconstructed.
+
+Both retry and finalize are local CLI/file operations. They are intentionally
+not available over HTTP.
 
 ## Protocol compatibility
 
@@ -93,7 +161,11 @@ with current defaults.
 | v3 | `codex-file-handoff-v3` | D1 only | `0.5.0` / `0.6.0` | `0.6.0` / `0.7.0` |
 
 The writer emits v3. Existing v1/v2 jobs remain finalizable with their
-original assignment matrix and known version pair. Unknown combinations,
+original assignment matrix, run-ID checkpoint namespace, and legacy audit
+shape; v3 attempt history, retry transitions, checkpoint IDs, and execution
+tokens are never added to legacy jobs. Duplicate legacy finalize and missing
+receipt recovery verify the completed database seal without rebuilding or
+rerunning the graph. Unknown combinations,
 missing v3 horizon seals, or attempts to add D2 to v3 fail before workflow
 execution.
 
@@ -108,6 +180,7 @@ belong outside the public core.
 ## Security boundary
 
 - Do not expose file-mode finalize as an HTTP endpoint.
+- Do not expose file-mode retry as an HTTP endpoint.
 - Do not make `POST /api/runs` invoke an interactive model task.
 - Give the draft writer write access only to its declared `drafts.json`.
 - Keep adapter credentials, licensed mappings, and source paths outside the

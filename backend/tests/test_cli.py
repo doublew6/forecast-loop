@@ -198,6 +198,58 @@ def test_cli_prepares_demo_handoff_as_json(monkeypatch, tmp_path, capsys) -> Non
     assert output["drafts_file"].endswith("/drafts.json")
 
 
+def test_cli_retries_failed_handoff_as_local_file_operation(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    handoffs = tmp_path / "handoffs"
+    job_dir = handoffs / "00000000-0000-0000-0000-000000000001"
+    job_dir.mkdir(parents=True)
+    (job_dir / "input.json").write_text(
+        json.dumps({"mode": "demo"}),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_retry(settings, selected_job, *, handoff_root):
+        captured.update(
+            {
+                "mode": "demo" if settings.use_demo_provider else "live",
+                "job_dir": selected_job,
+                "handoff_root": handoff_root,
+            }
+        )
+        return job_dir
+
+    monkeypatch.setattr("app.cli.retry_failed_handoff", fake_retry)
+
+    assert (
+        main(
+            [
+                "forecast",
+                "retry",
+                "--output-root",
+                str(handoffs),
+                str(job_dir),
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+
+    assert output == {
+        "status": "awaiting_draft",
+        "job_dir": str(job_dir.resolve()),
+        "drafts_file": str((job_dir / "drafts.json").resolve()),
+    }
+    assert captured == {
+        "mode": "demo",
+        "job_dir": job_dir,
+        "handoff_root": handoffs,
+    }
+
+
 def test_cli_prepare_refuses_to_bootstrap_an_unmigrated_database(
     monkeypatch,
     tmp_path,

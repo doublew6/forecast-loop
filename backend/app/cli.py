@@ -41,7 +41,11 @@ from .services.benchmark import (
     build_benchmark_report,
     verify_benchmark_golden,
 )
-from .services.handoff import finalize_handoff, prepare_handoff
+from .services.handoff import (
+    finalize_handoff,
+    prepare_handoff,
+    retry_failed_handoff,
+)
 from .services.judgment_bundle import (
     export_judgment_bundle,
     verify_judgment_bundle,
@@ -135,6 +139,15 @@ def _parser() -> argparse.ArgumentParser:
     finalize.add_argument("--snapshot", type=Path, default=None)
     finalize.add_argument("--output-root", type=Path, default=None)
     finalize.add_argument("job_dir", type=Path)
+
+    retry = forecast_commands.add_parser(
+        "retry",
+        help="Re-arm one sealed failed v3 handoff without admitting inputs again.",
+    )
+    retry.add_argument("--mode", choices=("demo", "live"), default=None)
+    retry.add_argument("--snapshot", type=Path, default=None)
+    retry.add_argument("--output-root", type=Path, default=None)
+    retry.add_argument("job_dir", type=Path)
 
     run = commands.add_parser(
         "run",
@@ -533,6 +546,21 @@ def _forecast_command(args: argparse.Namespace) -> int:
         snapshot=args.snapshot,
         output_root=args.output_root,
     )
+    if args.forecast_command == "retry":
+        job_dir = retry_failed_handoff(
+            settings,
+            args.job_dir,
+            handoff_root=args.output_root,
+        )
+        _print_json(
+            {
+                "status": "awaiting_draft",
+                "job_dir": str(job_dir.resolve()),
+                "drafts_file": str((job_dir / "drafts.json").resolve()),
+            }
+        )
+        return 0
+
     receipt = finalize_handoff(
         settings,
         args.job_dir,
