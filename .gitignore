@@ -26,6 +26,10 @@ htmlcov/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
+wiki-frontend/node_modules
+wiki-frontend/dist/
+wiki-frontend/server-dist/
+wiki-frontend/coverage/
 *.log
 *.sarif
 /.security/

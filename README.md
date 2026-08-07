@@ -91,6 +91,13 @@ read-only sources + versioned Wiki
 `data/wiki/`；源码中的 `wiki/` 只包含少量 `demo-only` 合成示例。核心结果不依赖
 LangSmith。
 
+### 独立 Wiki Atlas 前端
+
+`wiki-frontend/` 是阶段性独立的 Wiki 工作台，用领域、不可变原始材料、版本化 Wiki、
+来源血缘和反馈审查来组织知识。它仅面向 D1 预测范围，并提供人工上传、自动采集任务、
+安全的同源 API 代理以及带失败次数限制的公网登录网关。完整运行与安全说明见
+[Wiki Atlas README](wiki-frontend/README.md)。
+
 公开扩展边界采用 Ports/Adapters：外部来源返回带时间与内容哈希的冻结快照，推理过程
 只能生成受限草案，确定性程序负责校验和持久化。生产数据的许可字段、凭据、私有路径和
 provider 映射留在仓库外，forecast-loop 只接收 source-neutral 的只读封签产物。

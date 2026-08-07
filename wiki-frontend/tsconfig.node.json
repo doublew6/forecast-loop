@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo",
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["vite.config.ts", "operator-proxy.ts", "server-config.ts", "eslint.config.js"]
+}
