@@ -107,6 +107,15 @@ The backend uses FastAPI, LangChain, and LangGraph. The frontend uses React,
 TypeScript, and Vite. Local state, forecasts, and evaluations are stored in
 SQLite. Core results do not depend on LangSmith.
 
+### Standalone Wiki Atlas frontend
+
+`wiki-frontend/` is a temporary standalone knowledge workbench organized around
+domains, immutable raw materials, versioned Wiki pages, provenance, and review
+feedback. It is D1-only and includes manual uploads, scheduled collection jobs,
+a same-origin API proxy, and an authenticated public gateway with failed-login
+limits. See the [Wiki Atlas README](wiki-frontend/README.md) for setup and
+security details.
+
 Public extension points follow a Ports/Adapters design: external sources return
 time-bound, content-hashed frozen snapshots; inference may produce only
 restricted drafts; deterministic code validates and persists them. Licensed
