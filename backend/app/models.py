@@ -70,6 +70,9 @@ class WorkflowRun(Base):
     forecasts: Mapped[list[Forecast]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
+    user_judgment_targets: Mapped[list[UserJudgmentTarget]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
     task: Mapped[WorkflowTask | None] = relationship(
         back_populates="run",
         cascade="all, delete-orphan",
@@ -324,6 +327,51 @@ class Forecast(Base):
     user_judgments: Mapped[list[UserJudgment]] = relationship(
         back_populates="forecast",
     )
+
+
+class UserJudgmentTarget(Base):
+    """Immutable blind target published as soon as a run is prepared."""
+
+    __tablename__ = "user_judgment_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "index_code",
+            "horizon",
+            name="uq_user_judgment_target_identity",
+        ),
+        CheckConstraint(
+            "mode IN ('demo', 'live')",
+            name="ck_user_judgment_target_mode",
+        ),
+        CheckConstraint(
+            "opens_at < locks_at",
+            name="ck_user_judgment_target_window",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(String(24), index=True)
+    index_code: Mapped[str] = mapped_column(String(24), index=True)
+    index_name: Mapped[str] = mapped_column(String(64))
+    horizon: Mapped[str] = mapped_column(String(8), index=True)
+    base_trade_date: Mapped[date] = mapped_column(Date, index=True)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    data_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    opens_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    locks_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    run_input_hash: Mapped[str] = mapped_column(String(64))
+    market_universe_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    run: Mapped[WorkflowRun] = relationship(back_populates="user_judgment_targets")
+    judgments: Mapped[list[UserJudgment]] = relationship(back_populates="target")
 
 
 class EvaluationResult(Base):
@@ -753,7 +801,7 @@ class ResearchActivationEventV2(Base):
 
 
 class UserJudgment(Base):
-    """One immutable human judgment bound to a completed committee forecast."""
+    """One immutable revision of a human judgment."""
 
     __tablename__ = "user_judgments"
     __table_args__ = (
@@ -761,6 +809,17 @@ class UserJudgment(Base):
             "actor_id",
             "forecast_id",
             name="uq_user_judgment_actor_forecast",
+        ),
+        UniqueConstraint(
+            "actor_id",
+            "target_id",
+            "revision_number",
+            name="uq_user_judgment_actor_target_revision",
+        ),
+        CheckConstraint(
+            "(target_id IS NULL AND revision_number = 1) OR "
+            "(target_id IS NOT NULL AND revision_number >= 1)",
+            name="ck_user_judgment_revision_binding",
         ),
         CheckConstraint(
             "direction IN ('up', 'down')",
@@ -804,7 +863,17 @@ class UserJudgment(Base):
         nullable=True,
         index=True,
     )
-    forecast_id: Mapped[str] = mapped_column(ForeignKey("forecasts.id"), index=True)
+    forecast_id: Mapped[str | None] = mapped_column(
+        ForeignKey("forecasts.id"), nullable=True, index=True
+    )
+    target_id: Mapped[str | None] = mapped_column(
+        ForeignKey("user_judgment_targets.id"), nullable=True, index=True
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, default=1)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        ForeignKey("user_judgments.id"), nullable=True, index=True
+    )
+    target_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
     mode: Mapped[str] = mapped_column(String(24), index=True)
     index_code: Mapped[str] = mapped_column(String(24), index=True)
@@ -823,13 +892,21 @@ class UserJudgment(Base):
     )
     formal_score_eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     run_input_hash: Mapped[str] = mapped_column(String(64))
-    forecast_input_hash: Mapped[str] = mapped_column(String(64))
+    forecast_input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     policy_version: Mapped[str] = mapped_column(String(32))
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     wiki_path: Mapped[str] = mapped_column(Text)
     wiki_artifact_hash: Mapped[str] = mapped_column(String(64))
 
-    forecast: Mapped[Forecast] = relationship(back_populates="user_judgments")
+    forecast: Mapped[Forecast | None] = relationship(back_populates="user_judgments")
+    target: Mapped[UserJudgmentTarget | None] = relationship(
+        back_populates="judgments",
+        foreign_keys=[target_id],
+    )
+    supersedes: Mapped[UserJudgment | None] = relationship(
+        remote_side=[id],
+        foreign_keys=[supersedes_id],
+    )
     agent_spec_record: Mapped[AgentSpecRecord | None] = relationship(lazy="joined")
     evaluation: Mapped[UserJudgmentEvaluation | None] = relationship(
         back_populates="judgment",
