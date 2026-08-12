@@ -160,6 +160,112 @@ class LatestForecastResponse(APIModel):
     forecasts: list[ForecastRead]
 
 
+class V2ForecastEvaluationRead(APIModel):
+    actual_value: float
+    actual_label: Literal["up", "neutral", "down"]
+    brier_score: float
+    baseline_brier_score: float
+    brier_improvement: float
+    direction_correct: bool
+    evaluated_at: datetime
+
+
+class V2ForecastRead(APIModel):
+    id: str
+    run_id: str
+    target_id: str
+    horizon: Literal["D1", "W1"]
+    lane: Literal["formal", "shadow"]
+    configured_lane: Literal["formal", "shadow"]
+    anchor_date: date
+    target_date: date
+    probabilities: Probabilities
+    baseline_probabilities: Probabilities
+    neutral_threshold: float
+    rationale: str
+    counter_evidence: list[str]
+    invalidation_conditions: list[str]
+    created_at: datetime
+    evaluation: V2ForecastEvaluationRead | None = None
+
+
+class V2LatestForecastsResponse(APIModel):
+    program_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    formal: V2ForecastRead | None = None
+    shadow: V2ForecastRead | None = None
+
+
+class V2RiskDiagnostics(APIModel):
+    critique_count: int = Field(ge=0)
+    counter_evidence_coverage_rate: float = Field(ge=0, le=1)
+    invalidation_coverage_rate: float = Field(ge=0, le=1)
+    risk_flag_rate: float = Field(ge=0, le=1)
+    evaluated_system_errors: int = Field(ge=0)
+    missed_risk_count: int = Field(ge=0)
+    missed_risk_rate: float | None = Field(default=None, ge=0, le=1)
+
+
+class V2ScorecardItem(APIModel):
+    agent_id: str
+    agent_name: str
+    agent_version: str
+    model_name: str
+    prompt_version: str
+    target_id: str
+    signal_kind: str
+    horizon: str
+    sample_size: int = Field(ge=0)
+    independent_episodes: int = Field(ge=0)
+    average_brier: float | None = None
+    baseline_brier: float | None = None
+    brier_skill: float | None = None
+    classwise_ece: dict[str, float] | None = None
+    direction_accuracy: float | None = None
+    reasoning_average: float | None = None
+    ablation_brier_delta: float | None = None
+    risk_diagnostics: V2RiskDiagnostics | None = None
+    note: str = ""
+
+
+class V2ScorecardSection(APIModel):
+    axis: Literal[
+        "final_system",
+        "natural_horizon",
+        "d1_impact",
+        "reasoning",
+        "incremental_value",
+    ]
+    title: str
+    items: list[V2ScorecardItem]
+
+
+class V2AgentScorecardsResponse(APIModel):
+    program_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    generated_at: datetime
+    sections: list[V2ScorecardSection]
+
+
+class V2ReasoningReviewRead(APIModel):
+    id: str
+    signal_id: str
+    agent_id: str
+    target_id: str
+    signal_kind: str
+    horizon: str
+    status: Literal["not_required", "pending", "approved", "rejected"]
+    total_score: int = Field(ge=0, le=10)
+    human_review_required: bool
+    human_review_status: Literal["not_required", "pending", "approved", "rejected"]
+    deterministic_checks: dict[str, bool]
+    rubric: dict[str, Any]
+    created_at: datetime
+
+
+class V2ReasoningReviewListResponse(APIModel):
+    items: list[V2ReasoningReviewRead]
+    next_cursor: str | None = None
+
+
 class PredictionPrepareAttemptRead(APIModel):
     attempt_id: str
     base_session: date
@@ -802,3 +908,250 @@ class HealthRead(APIModel):
     status: Literal["ok"]
     mode: str
     version: str
+
+
+class AgentTraceReferenceRead(APIModel):
+    wiki_entry_id: str
+    wiki_title: str
+    wiki_version: str
+    section: str
+    content_hash: str
+    evidence_item_id: str | None = None
+    evidence_content_hash: str | None = None
+    source_url: str | None = None
+    published_at: datetime | None = None
+
+
+class AgentTraceSpanRead(APIModel):
+    span_id: str
+    parent_span_id: str | None
+    node_id: str
+    name: str
+    span_kind: Literal["workflow", "agent", "llm", "validator", "persistence", "external"]
+    status: Literal["running", "completed", "failed"]
+    started_at: datetime
+    completed_at: datetime | None
+    duration_ms: float | None
+    agent_id: str | None
+    agent_version: str | None
+    model_name: str | None
+    prompt_version: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    estimated_cost_usd: float | None
+    input_digest: str | None
+    output_digest: str | None
+    tool_name: str | None = None
+    input_summary: str | None = None
+    output_summary: str | None = None
+    summary: str | None
+    error_code: str | None
+    error_summary: str | None
+    attributes: dict[str, Any]
+    references: list[AgentTraceReferenceRead] = Field(default_factory=list)
+
+
+class AgentTraceArtifactLinkRead(APIModel):
+    id: str
+    span_id: str | None
+    artifact_kind: Literal[
+        "signal", "forecast", "evaluation", "reasoning_review", "reflection", "bad_case"
+    ]
+    artifact_id: str
+    relation: Literal["input", "output", "reused", "diagnostic"]
+    content_hash: str | None
+    created_at: datetime
+
+
+class AgentTraceRead(APIModel):
+    id: str
+    workflow_kind: Literal["prediction", "reflection", "agent_eval"]
+    subject_id: str
+    attempt_number: int
+    target_id: str | None
+    horizon: str | None
+    mode: str
+    status: Literal["running", "completed", "failed", "degraded"]
+    started_at: datetime
+    completed_at: datetime | None
+    duration_ms: float | None
+    input_hash: str | None
+    trace_policy_version: str
+    telemetry_complete: bool
+    error_code: str | None
+    error_summary: str | None
+    attributes: dict[str, Any]
+    span_count: int
+    spans: list[AgentTraceSpanRead] = Field(default_factory=list)
+    artifact_links: list[AgentTraceArtifactLinkRead] = Field(default_factory=list)
+    external_url: str | None = None
+    audit_url: str | None = None
+    audit_label: str | None = None
+
+
+class AgentTraceListResponse(APIModel):
+    items: list[AgentTraceRead]
+    next_cursor: str | None = None
+
+
+class AgentObservabilitySummary(APIModel):
+    window_hours: int
+    total_traces: int
+    running_traces: int
+    completed_traces: int
+    failed_traces: int
+    degraded_traces: int
+    telemetry_complete_rate: float | None
+    completion_rate: float | None
+    p95_duration_ms: float | None
+    by_workflow_kind: dict[str, int]
+    recent: list[AgentTraceRead]
+    database_size_bytes: int | None = None
+    trace_storage_bytes: int | None = None
+    stored_span_count: int = 0
+    stored_artifact_link_count: int = 0
+    storage_warning_bytes: int
+    storage_warning: bool
+
+
+class AgentEvalV2JobRead(APIModel):
+    id: str
+    suite_id: str
+    suite_version: str
+    suite_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    baseline_target_id: str
+    candidate_target_id: str
+    status: Literal["awaiting_draft", "ready_to_finalize", "completed"]
+    release_decision: Literal["pending", "pass", "fail", "insufficient_sample"]
+    policy_version: str
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    report_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    error: str | None = None
+    summary: dict[str, Any]
+    result_count: Literal[0] = 0
+    results: list[Any] = Field(default_factory=list)
+
+
+class AgentEvalV2JobListResponse(APIModel):
+    items: list[AgentEvalV2JobRead]
+
+
+class AgentEvalSuiteRead(APIModel):
+    suite_id: str
+    version: str
+    title: str
+    description: str
+    synthetic: bool
+    runner_kind: str
+    case_count: int
+    target_ids: list[str]
+    arm_ids: list[str] = Field(default_factory=list)
+    content_hash: str
+    source: Literal["public", "private"]
+
+
+class AgentEvalSuiteListResponse(APIModel):
+    items: list[AgentEvalSuiteRead]
+
+
+class AgentEvalExperimentCreate(APIModel):
+    suite_id: str
+    suite_version: str | None = None
+    baseline_target_id: str
+    candidate_target_id: str
+    source: Literal["public", "private"] = "public"
+
+
+class AgentEvalResultRead(APIModel):
+    id: str
+    arm: Literal["baseline", "candidate"]
+    case_id: str
+    evaluator_id: str
+    evaluator_version: str
+    metric_kind: str
+    score: float | None
+    passed: bool | None
+    status: Literal["passed", "failed", "not_applicable", "error"]
+    label: str | None
+    explanation: str
+    output_hash: str
+    trace_id: str | None
+    created_at: datetime
+
+
+class AgentEvalExperimentRead(APIModel):
+    id: str
+    suite_id: str
+    suite_version: str
+    suite_hash: str
+    baseline_target_id: str
+    baseline_target_hash: str
+    candidate_target_id: str
+    candidate_target_hash: str
+    status: Literal["queued", "running", "completed", "failed"]
+    release_decision: Literal["pending", "pass", "fail", "insufficient_sample"]
+    policy_version: str
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    report_hash: str | None
+    error: str | None
+    summary: dict[str, Any]
+    result_count: int
+    results: list[AgentEvalResultRead] = Field(default_factory=list)
+
+
+class AgentEvalExperimentListResponse(APIModel):
+    items: list[AgentEvalExperimentRead]
+
+
+class AgentBadCaseTransitionCreate(APIModel):
+    to_status: Literal["triaged", "confirmed", "materialized", "resolved", "rejected"]
+    actor: str = Field(min_length=1, max_length=120)
+    notes: str = ""
+    dataset_id: str | None = Field(default=None, max_length=120)
+    dataset_version: str | None = Field(default=None, max_length=32)
+    test_case: dict[str, Any] | None = None
+
+
+class AgentBadCaseEventRead(APIModel):
+    id: str
+    sequence_number: int
+    event_type: str
+    from_status: str | None
+    to_status: str
+    idempotency_key: str
+    actor: str
+    notes: str
+    payload: dict[str, Any]
+    previous_event_hash: str | None
+    content_hash: str
+    occurred_at: datetime
+
+
+class AgentBadCaseRead(APIModel):
+    id: str
+    trace_id: str
+    span_id: str | None
+    eval_result_id: str | None
+    workflow_kind: str
+    issue_type: str
+    severity: Literal["low", "medium", "high", "critical"]
+    status: Literal["detected", "triaged", "confirmed", "materialized", "resolved", "rejected"]
+    title: str
+    summary: str
+    expected_behavior: str
+    input_hash: str | None
+    dedupe_hash: str
+    dataset_id: str | None
+    dataset_version: str | None
+    created_at: datetime
+    updated_at: datetime
+    events: list[AgentBadCaseEventRead] = Field(default_factory=list)
+
+
+class AgentBadCaseListResponse(APIModel):
+    items: list[AgentBadCaseRead]

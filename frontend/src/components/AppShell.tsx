@@ -1,6 +1,8 @@
 import {
+  Activity,
   BarChart3,
   BookOpenText,
+  FlaskConical,
   Gauge,
   History,
   Lightbulb,
@@ -37,6 +39,8 @@ const navigationGroups = [
   {
     label: '系统',
     items: [
+      { to: '/evaluations', label: 'Agent 评测', icon: FlaskConical },
+      { to: '/observability', label: '运行监控', icon: Activity },
       { to: '/runs', label: '运行记录', icon: History },
     ],
   },

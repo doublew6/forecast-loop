@@ -513,6 +513,426 @@ export interface AgentScorecard {
   calibration: CalibrationPoint[]
 }
 
+export type V2Horizon = 'D1' | 'W1' | 'D20'
+export type ResearchLaneV2 = 'formal' | 'shadow'
+
+export interface ResearchInstrumentV2 {
+  code: string
+  name: string
+  role: 'primary' | 'benchmark'
+  data_required: boolean
+}
+
+export interface ResearchTargetV2 {
+  target_id: string
+  label: string
+  outcome_kind: 'absolute_return' | 'relative_return'
+  horizon: V2Horizon
+  lane: ResearchLaneV2
+  primary_instrument: string
+  comparison_instrument: string | null
+}
+
+export interface ResearchScopeV2 {
+  target_id: string
+  label: string
+  horizon: V2Horizon
+  instrument: string
+  lane: 'shadow'
+}
+
+export interface ResearchProgramV2 {
+  schema_version: 'forecast-loop.research-program/v2'
+  program_id: string
+  version: string
+  market: string
+  timezone: string
+  calendar_id: string
+  instruments: ResearchInstrumentV2[]
+  decision_targets: ResearchTargetV2[]
+  research_scopes: ResearchScopeV2[]
+  content_hash?: string
+  program_hash: string
+}
+
+export interface ForecastEvaluationV2 {
+  actual_value?: number | null
+  actual_label?: OutcomeLabel | null
+  brier_score?: number | null
+  baseline_brier_score?: number | null
+  brier_improvement?: number | null
+  direction_correct?: boolean | null
+  evaluated_at?: string | null
+}
+
+export interface ForecastV2 {
+  id: string
+  run_id?: string
+  target_id: string
+  horizon: V2Horizon
+  lane: ResearchLaneV2
+  configured_lane?: ResearchLaneV2
+  anchor_date: string
+  target_date: string
+  probabilities: Probabilities
+  baseline_probabilities?: Probabilities
+  threshold?: number
+  neutral_threshold?: number
+  rationale: string
+  counter_evidence?: string[]
+  invalidation_conditions?: string[]
+  created_at: string
+  evaluation?: ForecastEvaluationV2 | null
+}
+
+export interface LatestForecastsV2 {
+  program_hash: string
+  formal: ForecastV2 | null
+  shadow: ForecastV2 | null
+}
+
+export type AgentScorecardAxisV2 =
+  | 'final_system'
+  | 'natural_horizon'
+  | 'd1_impact'
+  | 'reasoning'
+  | 'incremental_value'
+  | string
+
+export interface AgentScorecardItemV2 {
+  agent_id: string
+  agent_name: string
+  agent_version?: string
+  model_name?: string
+  prompt_version?: string
+  target_id: string
+  signal_kind: string
+  horizon: V2Horizon
+  sample_size: number
+  independent_episodes: number
+  average_brier: number | null
+  baseline_brier: number | null
+  brier_skill: number | null
+  classwise_ece: Partial<Record<OutcomeLabel, number>> | null
+  direction_accuracy: number | null
+  reasoning_average: number | null
+  ablation_brier_delta: number | null
+  risk_diagnostics?: {
+    critique_count: number
+    counter_evidence_coverage_rate: number
+    invalidation_coverage_rate: number
+    risk_flag_rate: number
+    evaluated_system_errors: number
+    missed_risk_count: number
+    missed_risk_rate: number | null
+  } | null
+  note: string
+}
+
+export interface AgentScorecardSectionV2 {
+  axis: AgentScorecardAxisV2
+  title: string
+  items: AgentScorecardItemV2[]
+}
+
+export interface AgentScorecardsV2 {
+  program_hash: string
+  generated_at: string
+  sections: AgentScorecardSectionV2[]
+}
+
+export interface ReasoningReviewV2 {
+  id: string
+  signal_id: string
+  agent_id: string
+  target_id: string
+  signal_kind?: string
+  horizon?: string
+  status: string
+  total_score: number | null
+  human_review_required: boolean
+  human_review_status: string | null
+  deterministic_checks?: Record<string, boolean>
+  rubric?: Record<string, unknown>
+  created_at: string
+}
+
+export interface ReasoningReviewsV2 {
+  items: ReasoningReviewV2[]
+}
+
+export type AgentTraceStatus = 'running' | 'completed' | 'failed' | 'degraded'
+export type AgentWorkflowKind = 'prediction' | 'reflection' | 'agent_eval'
+export type AgentEvalDecision = 'pending' | 'pass' | 'fail' | 'insufficient_sample'
+export type AgentBadCaseStatus =
+  | 'detected'
+  | 'triaged'
+  | 'confirmed'
+  | 'materialized'
+  | 'resolved'
+  | 'rejected'
+
+export interface AgentTraceReference {
+  wiki_entry_id: string
+  wiki_title: string
+  wiki_version: string
+  section: string
+  content_hash: string
+  evidence_item_id: string | null
+  evidence_content_hash: string | null
+  source_url: string | null
+  published_at: string | null
+}
+
+export interface AgentTraceSpan {
+  span_id: string
+  parent_span_id: string | null
+  node_id: string
+  name: string
+  span_kind: 'workflow' | 'agent' | 'llm' | 'validator' | 'persistence' | 'external'
+  status: 'running' | 'completed' | 'failed'
+  started_at: string
+  completed_at: string | null
+  duration_ms: number | null
+  agent_id: string | null
+  agent_version: string | null
+  model_name: string | null
+  prompt_version: string | null
+  input_tokens: number | null
+  output_tokens: number | null
+  total_tokens: number | null
+  estimated_cost_usd: number | null
+  input_digest: string | null
+  output_digest: string | null
+  tool_name: string | null
+  input_summary: string | null
+  output_summary: string | null
+  summary: string | null
+  error_code: string | null
+  error_summary: string | null
+  attributes: Record<string, unknown>
+  references: AgentTraceReference[]
+}
+
+export interface AgentTrace {
+  id: string
+  workflow_kind: AgentWorkflowKind
+  subject_id: string
+  mode: string
+  status: AgentTraceStatus
+  started_at: string
+  completed_at: string | null
+  duration_ms: number | null
+  input_hash: string | null
+  trace_policy_version: string
+  telemetry_complete: boolean
+  error_code: string | null
+  error_summary: string | null
+  attributes: Record<string, unknown>
+  span_count: number
+  spans: AgentTraceSpan[]
+  external_url: string | null
+  audit_url: string | null
+  audit_label: string | null
+  attempt_number?: number
+  target_id?: string | null
+  agent_id?: string | null
+  horizon?: string | null
+  natural_horizon?: V2Horizon | null
+  sealed_at?: string | null
+  artifact_links?: AgentTraceArtifactLink[]
+}
+
+export interface AgentTraceArtifactLink {
+  id: string
+  span_id: string | null
+  artifact_kind: 'signal' | 'forecast' | 'evaluation' | 'reasoning_review' | 'reflection' | 'bad_case' | string
+  artifact_id: string
+  relation: 'input' | 'output' | 'reused' | 'diagnostic'
+  content_hash: string | null
+  created_at: string
+}
+
+export interface AgentTracePage {
+  items: AgentTrace[]
+  next_cursor?: string | null
+  total?: number | null
+}
+
+export interface AgentObservabilitySummary {
+  window_hours: number
+  total_traces: number
+  running_traces: number
+  completed_traces: number
+  failed_traces: number
+  degraded_traces: number
+  telemetry_complete_rate: number | null
+  completion_rate: number | null
+  p95_duration_ms: number | null
+  by_workflow_kind: Record<string, number>
+  recent: AgentTrace[]
+  database_size_bytes?: number | null
+  trace_storage_bytes?: number | null
+  stored_span_count?: number
+  stored_artifact_link_count?: number
+  storage_warning_bytes?: number
+  storage_warning?: boolean
+}
+
+export interface AgentEvalSuite {
+  suite_id: string
+  version: string
+  title: string
+  description: string
+  synthetic: boolean
+  runner_kind: string
+  case_count: number
+  target_ids: string[]
+  arm_ids?: string[]
+  content_hash: string
+  source: 'public' | 'private'
+}
+
+export interface AgentEvalResult {
+  id: string
+  arm: 'baseline' | 'candidate'
+  case_id: string
+  evaluator_id: string
+  evaluator_version: string
+  metric_kind: string
+  score: number | null
+  passed: boolean | null
+  status: 'passed' | 'failed' | 'not_applicable' | 'error'
+  label: string | null
+  explanation: string
+  output_hash: string
+  trace_id: string | null
+  created_at: string
+}
+
+export interface AgentEvalTargetGateV2 {
+  release_gate?: boolean | null
+  decision?: AgentEvalDecision
+  episode_count?: number
+  hard_gates?: {
+    schema_valid?: boolean | { rate?: number; passed?: boolean }
+    cutoff_valid?: boolean | { rate?: number; passed?: boolean }
+    citation_valid?: boolean | { rate?: number; passed?: boolean }
+    trace_valid?: boolean | { rate?: number; passed?: boolean }
+    must_pass_bad_case?: { rate?: number; passed?: boolean }
+  }
+  metric_gates?: {
+    brier_delta?: number | null
+    direction_drop?: number | null
+    p95_latency_ratio?: number | null
+    token_ratio?: number | null
+    passed?: boolean | null
+  }
+  baseline?: Record<string, number | null>
+  candidate?: Record<string, number | null>
+  ablation?: Array<Record<string, unknown>>
+  reasoning?: {
+    baseline?: Record<string, number | null>
+    candidate?: Record<string, number | null>
+  }
+}
+
+export interface AgentEvalReportSummary {
+  release_decision?: AgentEvalDecision
+  case_count?: number
+  outcome_case_count?: number
+  must_pass_rate?: number
+  hard_gate_pass?: boolean
+  metric_gate_pass?: boolean | null
+  metric_gates?: {
+    brier_delta?: number | null
+    direction_drop?: number | null
+    p95_latency_ratio?: number | null
+    token_ratio?: number | null
+  }
+  baseline?: Record<string, number | null>
+  candidate?: Record<string, number | null>
+  policy?: Record<string, number | string>
+  pending_arms?: string[]
+  pending_tasks?: string[]
+  targets?: Record<string, AgentEvalTargetGateV2>
+}
+
+export interface AgentEvalExperiment {
+  id: string
+  suite_id: string
+  suite_version: string
+  suite_hash: string
+  baseline_target_id: string
+  baseline_target_hash: string
+  candidate_target_id: string
+  candidate_target_hash: string
+  status: 'queued' | 'awaiting_draft' | 'ready_to_finalize' | 'running' | 'completed' | 'failed'
+  release_decision: AgentEvalDecision
+  policy_version: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  report_hash: string | null
+  error: string | null
+  summary: AgentEvalReportSummary
+  result_count: number
+  results: AgentEvalResult[]
+}
+
+export interface AgentEvalCreateInput {
+  suite_id: string
+  suite_version?: string
+  baseline_target_id: string
+  candidate_target_id: string
+  source: 'public' | 'private'
+}
+
+export interface AgentBadCaseEvent {
+  id: string
+  sequence_number: number
+  event_type: string
+  from_status: string | null
+  to_status: string
+  idempotency_key: string
+  actor: string
+  notes: string
+  payload: Record<string, unknown>
+  previous_event_hash: string | null
+  content_hash: string
+  occurred_at: string
+}
+
+export interface AgentBadCase {
+  id: string
+  trace_id: string
+  span_id: string | null
+  eval_result_id: string | null
+  workflow_kind: string
+  issue_type: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  status: AgentBadCaseStatus
+  title: string
+  summary: string
+  expected_behavior: string
+  input_hash: string | null
+  dedupe_hash: string
+  dataset_id: string | null
+  dataset_version: string | null
+  created_at: string
+  updated_at: string
+  events: AgentBadCaseEvent[]
+}
+
+export interface AgentBadCaseTransitionInput {
+  to_status: Exclude<AgentBadCaseStatus, 'detected'>
+  actor: string
+  notes?: string
+  dataset_id?: string
+  dataset_version?: string
+  test_case?: Record<string, unknown>
+}
+
 export interface WikiSource {
   id: string
   title: string

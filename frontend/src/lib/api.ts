@@ -1,10 +1,19 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { demoForecastBatch, demoMeeting, demoRuns, demoScorecards, demoWiki } from './demo'
 import type {
+  AgentBadCase,
+  AgentBadCaseTransitionInput,
+  AgentEvalCreateInput,
+  AgentEvalExperiment,
+  AgentEvalSuite,
+  AgentObservabilitySummary,
   AgentOpinion,
   AgentScorecard,
+  AgentScorecardsV2,
   AgentSourceType,
+  AgentTrace,
+  AgentTracePage,
   AgentWorkflowRole,
   ApiEnvelope,
   Citation,
@@ -15,6 +24,7 @@ import type {
   LessonProposal,
   Meeting,
   MarketUniverse,
+  LatestForecastsV2,
   PredictionStatus,
   ReflectionDetail,
   ReflectionFinding,
@@ -23,6 +33,8 @@ import type {
   ReflectionSource,
   ReflectionSeverity,
   ReflectionSummary,
+  ReasoningReviewsV2,
+  ResearchProgramV2,
   RunStatus,
   RunSummary,
   TaskStatus,
@@ -1284,6 +1296,72 @@ export function useLatestForecasts(enabled = true) {
   })
 }
 
+function unwrapObject<T>(payload: T | { data: T }): T {
+  return payload && typeof payload === 'object' && 'data' in payload
+    ? (payload as { data: T }).data
+    : payload as T
+}
+
+export function useResearchProgramV2() {
+  return useQuery({
+    queryKey: ['v2', 'research-program'],
+    queryFn: async () => {
+      const raw = unwrapObject(await request<
+        ResearchProgramV2 | { data: ResearchProgramV2 }
+      >('/api/v2/research-program')) as ResearchProgramV2 & {
+        targets?: ResearchProgramV2['decision_targets']
+      }
+      return {
+        ...raw,
+        decision_targets: raw.decision_targets ?? raw.targets ?? [],
+        program_hash: raw.program_hash ?? raw.content_hash ?? '',
+      }
+    },
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  })
+}
+
+export function useLatestForecastsV2() {
+  return useQuery({
+    queryKey: ['v2', 'forecasts', 'latest'],
+    queryFn: async () => {
+      const raw = unwrapObject(
+        await request<LatestForecastsV2 | { data: LatestForecastsV2 }>('/api/v2/forecasts/latest'),
+      )
+      const adapt = (forecast: LatestForecastsV2['formal']) => forecast
+        ? { ...forecast, threshold: forecast.threshold ?? forecast.neutral_threshold ?? 0 }
+        : null
+      return { ...raw, formal: adapt(raw.formal), shadow: adapt(raw.shadow) }
+    },
+    staleTime: 30_000,
+    retry: false,
+  })
+}
+
+export function useAgentScorecardsV2() {
+  return useQuery({
+    queryKey: ['v2', 'agent-scorecards'],
+    queryFn: async () => unwrapObject(
+      await request<AgentScorecardsV2 | { data: AgentScorecardsV2 }>('/api/v2/agent-scorecards'),
+    ),
+    retry: false,
+  })
+}
+
+export function useReasoningReviewsV2() {
+  return useQuery({
+    queryKey: ['v2', 'reasoning-reviews'],
+    queryFn: async () => {
+      const raw = await request<ReasoningReviewsV2 | ReasoningReviewsV2['items'] | { data: ReasoningReviewsV2 }>('/api/v2/reasoning-reviews')
+      if (Array.isArray(raw)) return raw
+      if ('data' in raw) return raw.data.items
+      return raw.items
+    },
+    retry: false,
+  })
+}
+
 export function useMarketUniverse() {
   return useQuery({
     queryKey: ['market-universe'],
@@ -1487,6 +1565,130 @@ export function useCreateRun() {
   return useMutation({
     mutationFn: async () => adaptRun(await request<RawRun>('/api/runs', { method: 'POST', body: '{}' })),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs'] }),
+  })
+}
+
+export function useAgentEvalSuites() {
+  return useQuery({
+    queryKey: ['agent-evals', 'suites'],
+    queryFn: () => request<{ items: AgentEvalSuite[] }>('/api/agent-evals/suites')
+      .then((response) => response.items),
+    staleTime: 60_000,
+  })
+}
+
+export function useAgentEvalExperiments() {
+  return useQuery({
+    queryKey: ['agent-evals', 'experiments'],
+    queryFn: async () => {
+      const [legacy, fileJobs] = await Promise.all([
+        request<{ items: AgentEvalExperiment[] }>('/api/agent-evals/experiments')
+          .then((response) => response.items),
+        request<{ items: AgentEvalExperiment[] }>('/api/agent-evals/jobs-v2')
+          .then((response) => response.items)
+          .catch(() => []),
+      ])
+      return [...fileJobs, ...legacy].sort(
+        (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at),
+      )
+    },
+    refetchInterval: (query) => query.state.data?.some(
+      (item) => item.status === 'queued'
+        || item.status === 'awaiting_draft'
+        || item.status === 'ready_to_finalize'
+        || item.status === 'running',
+    ) ? 2_500 : false,
+  })
+}
+
+export function useCreateAgentEvalExperiment() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: AgentEvalCreateInput) => request<AgentEvalExperiment>(
+      '/api/agent-evals/experiments',
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': `web-agent-eval-${crypto.randomUUID()}` },
+        body: JSON.stringify(payload),
+      },
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-evals', 'experiments'] })
+      queryClient.invalidateQueries({ queryKey: ['agent-traces'] })
+    },
+  })
+}
+
+export function useAgentBadCases() {
+  return useQuery({
+    queryKey: ['agent-bad-cases'],
+    queryFn: () => request<{ items: AgentBadCase[] }>('/api/agent-bad-cases')
+      .then((response) => response.items),
+  })
+}
+
+export function useTransitionAgentBadCase() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: AgentBadCaseTransitionInput }) =>
+      request<AgentBadCase>(`/api/agent-bad-cases/${encodeURIComponent(id)}/transitions`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': `web-bad-case-${crypto.randomUUID()}` },
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['agent-bad-cases'] }),
+  })
+}
+
+export function useAgentObservability(hours = 24) {
+  return useQuery({
+    queryKey: ['agent-observability', hours],
+    queryFn: () => request<AgentObservabilitySummary>(
+      `/api/agent-observability/summary?hours=${hours}`,
+    ),
+    refetchInterval: 10_000,
+  })
+}
+
+export interface AgentTraceFilters {
+  workflow_kind?: string
+  target_id?: string
+  agent_id?: string
+  horizon?: string
+  status?: string
+  started_from?: string
+  started_to?: string
+}
+
+export function useAgentTraces(filters: AgentTraceFilters = {}) {
+  return useInfiniteQuery({
+    queryKey: ['agent-traces', filters],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams()
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) query.set(key, value)
+      })
+      if (pageParam) query.set('cursor', pageParam)
+      const suffix = query.toString() ? `?${query.toString()}` : ''
+      return request<AgentTracePage>(`/api/agent-traces${suffix}`)
+    },
+    getNextPageParam: (lastPage) => lastPage.next_cursor || undefined,
+    refetchInterval: (query) => query.state.data?.pages.some(
+      (page) => page.items.some((item) => item.status === 'running'),
+    ) ? 3_000 : 15_000,
+  })
+}
+
+export function useAgentTrace(traceId?: string) {
+  return useQuery({
+    queryKey: ['agent-traces', traceId ?? 'none'],
+    enabled: Boolean(traceId),
+    queryFn: async () => {
+      if (!traceId) throw new Error('缺少 trace ID')
+      return request<AgentTrace>(`/api/agent-traces/${encodeURIComponent(traceId)}`)
+    },
+    refetchInterval: (query) => query.state.data?.status === 'running' ? 2_000 : false,
   })
 }
 

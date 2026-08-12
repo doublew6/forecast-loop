@@ -66,6 +66,7 @@ from .snapshot import (
     validate_live_snapshot,
     validate_snapshot_content_hash,
 )
+from .v1_run_admission import assert_v1_run_creation_allowed
 from .wiki import FrozenWikiCatalog, WikiCatalog
 
 LEGACY_HANDOFF_PROTOCOL_VERSION = "1.0.0"
@@ -388,6 +389,8 @@ def prepare_handoff(
     job_dir: Path | None = None
     try:
         require_schema_current(database.engine)
+        with database.session_factory() as session:
+            assert_v1_run_creation_allowed(session)
         runtime_mode = _runtime_mode_for_protocol(protocol_version)
         forecast_horizons = _forecast_horizons_for_protocol(protocol_version)
         quant_input = (

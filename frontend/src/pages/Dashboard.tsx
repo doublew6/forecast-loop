@@ -1,12 +1,12 @@
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Database, NotebookPen, ShieldCheck } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Database, FlaskConical, GitBranch, NotebookPen, ShieldCheck, Target } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link } from 'react-router'
 
 import { DemoBanner, DirectionBadge, EmptyState, LoadingPanel, PageHeading, QualityBadge } from '../components/Common'
 import { ProbabilityBar } from '../components/Probability'
 import { formatDateTime, percent } from '../lib/format'
-import { useLatestForecasts, useMarketUniverse, useMeeting, usePredictionStatus } from '../lib/api'
-import type { Forecast, PredictionDailyState } from '../lib/types'
+import { useLatestForecasts, useLatestForecastsV2, useMarketUniverse, useMeeting, usePredictionStatus, useResearchProgramV2 } from '../lib/api'
+import type { Forecast, ForecastV2, PredictionDailyState, ResearchProgramV2 } from '../lib/types'
 
 function ForecastRow({ forecast, meetingHref }: { forecast?: Forecast; meetingHref: string }) {
   if (!forecast) {
@@ -47,8 +47,133 @@ function ForecastRow({ forecast, meetingHref }: { forecast?: Forecast; meetingHr
   )
 }
 
-export function Dashboard() {
-  const horizon = 'D1'
+function forecastDirection(forecast: ForecastV2) {
+  return (Object.entries(forecast.probabilities) as Array<[keyof ForecastV2['probabilities'], number]>)
+    .sort((left, right) => right[1] - left[1])[0][0]
+}
+
+function FocusedForecast({ forecast }: { forecast: ForecastV2 }) {
+  const direction = forecastDirection(forecast)
+  const isFormal = forecast.lane === 'formal'
+  return (
+    <article className="focused-forecast-card">
+      <div className="focused-forecast-identity">
+        <div>
+          <span className="index-code">000852.SH</span>
+          <h2>中证1000 <small>D1</small></h2>
+          <p>唯一正式目标 · {isFormal ? '已激活发布' : '当前 Shadow 观察'} · 下一交易日绝对涨跌</p>
+        </div>
+        <DirectionBadge direction={direction} />
+      </div>
+      <div className="focused-probability">
+        <span>封签概率分布</span>
+        <ProbabilityBar probabilities={forecast.probabilities} />
+      </div>
+      <p className="focused-rationale">{forecast.rationale}</p>
+      <dl className="focused-forecast-receipt">
+        <div><dt>锚点日</dt><dd>{forecast.anchor_date}</dd></div>
+        <div><dt>目标日</dt><dd>{forecast.target_date}</dd></div>
+        <div><dt>中性带</dt><dd>±{percent(forecast.threshold ?? forecast.neutral_threshold, 2)}</dd></div>
+        <div><dt>Forecast ID</dt><dd><code>{forecast.id}</code></dd></div>
+      </dl>
+    </article>
+  )
+}
+
+function FocusedDashboard({ program }: { program: ResearchProgramV2 }) {
+  const latest = useLatestForecastsV2()
+  const forecasts = latest.data
+  const formal = forecasts?.formal ?? null
+  const shadow = forecasts?.shadow ?? null
+  const d1Activated = formal?.lane === 'formal'
+  const benchmark = program.instruments.find((item) => item.role === 'benchmark')
+  const macroScope = program.research_scopes.find((item) => item.horizon === 'D20')
+
+  return (
+    <div className="page dashboard-page focused-dashboard-page">
+      <PageHeading
+        eyebrow="Focused Research Program · v2"
+        title="中证1000 单主标的决策台"
+        description="正式成绩只回答一个问题：中证1000下一交易日的上涨、小波动或下跌概率。跨周期观点保留为可审计研究输入，不与 D1 混成总分。"
+        actions={(
+          <div className="as-of-block">
+            <CalendarDays size={17} />
+            <div><span>最近封签</span><strong>{formal ? formatDateTime(formal.created_at) : '等待首个 v2 预测'}</strong></div>
+          </div>
+        )}
+      />
+
+      {latest.isError && (
+        <div className="action-message" role="status">v2 Program 已启用，最新预测尚不可用；没有使用五指数历史结果代替。</div>
+      )}
+
+      <section className="focus-program-strip" aria-label="v2 研究协议">
+        <div className="focus-program-primary">
+          <span><i /> {d1Activated ? 'FORMAL ACTIVE' : 'FORMAL TARGET · SHADOW'}</span>
+          <strong>中证1000 · D1</strong>
+          <small>{d1Activated ? '已进入正式发布与结果评分' : '正式目标尚未激活，当前仅积累前瞻样本'}</small>
+        </div>
+        <div><Target size={17} /><p><span>主标的</span><strong>000852.SH</strong></p></div>
+        <div><FlaskConical size={17} /><p><span>影子诊断</span><strong>相对强弱 · W1</strong></p></div>
+        <div><ShieldCheck size={17} /><p><span>Program</span><strong>v{program.version}</strong></p></div>
+      </section>
+
+      <div className="focused-dashboard-grid">
+        <section aria-labelledby="formal-forecast-heading">
+          <div className="section-heading compact-heading">
+            <div><span className="eyebrow">D1 决策封签</span><h2 id="formal-forecast-heading">唯一决策目标</h2></div>
+            <span className={d1Activated ? 'formal-lane-badge' : 'shadow-lane-badge'}>{d1Activated ? 'FORMAL · D1' : 'SHADOW · D1'}</span>
+          </div>
+          {latest.isLoading ? <LoadingPanel size="section" /> : formal ? (
+            <FocusedForecast forecast={formal} />
+          ) : (
+            <div className="panel focused-empty"><EmptyState title="等待中证1000 D1 预测" description="v2 不会用旧五指数 Forecast 回填这个位置。" /></div>
+          )}
+        </section>
+
+        <aside className="focused-context-stack" aria-label="影子研究与比较基准">
+          <section className="panel shadow-forecast-card">
+            <div className="panel-heading">
+              <div><span className="eyebrow">Shadow</span><h2>中证1000 vs 沪深300</h2><span className="panel-caption">未来 5 个交易日相对表现 · 不进入正式 D1 成绩</span></div>
+              <span className="shadow-lane-badge">SHADOW · W1</span>
+            </div>
+            {shadow ? (
+              <>
+                <ProbabilityBar probabilities={shadow.probabilities} compact />
+                <p>{shadow.rationale}</p>
+                <small>目标日 {shadow.target_date} · 中性带 ±{percent(shadow.threshold ?? shadow.neutral_threshold, 2)}</small>
+              </>
+            ) : <EmptyState title="暂无 W1 影子预测" description="影子轨道按非重叠锚点积累，不补齐空档。" />}
+          </section>
+
+          <section className="panel benchmark-context-card">
+            <div><Database size={18} /><span>比较基准</span></div>
+            <strong>{benchmark?.name ?? '沪深300'} <code>{benchmark?.code ?? '000300.SH'}</code></strong>
+            <p>只用于相对收益计算和冻结市场背景，不生成独立正式预测。</p>
+          </section>
+
+          <section className="panel macro-context-card">
+            <div><GitBranch size={18} /><span>自然周期研究</span></div>
+            <strong>{macroScope?.label ?? '中证1000未来20个交易日宏观状态'}</strong>
+            <p>D20 宏观状态与每日 D1 边际影响分开记录、分开评价。</p>
+          </section>
+        </aside>
+      </div>
+
+      <section className="focused-audit-links panel">
+        <div><span className="eyebrow">审计路径</span><h2>从结论回到 Agent 证据</h2><p>结果、自然周期、D1 边际影响、推理质量和增量价值分别查看，不生成跨周期总榜。</p></div>
+        <div>
+          <Link className="secondary-button" to="/scorecards">查看分轴成绩单 <ArrowRight size={14} /></Link>
+          <Link className="secondary-button" to="/observability">查看执行 Trace <ArrowRight size={14} /></Link>
+          <Link className="secondary-button" to="/runs">访问 v1 历史 <ArrowRight size={14} /></Link>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function LegacyDashboard() {
+  const horizon = 'D1' as const
   const latest = useLatestForecasts()
   const marketUniverse = useMarketUniverse()
   const predictionStatus = usePredictionStatus()
@@ -128,7 +253,7 @@ export function Dashboard() {
       <PageHeading
         eyebrow="预测账本"
         title={todayStatus?.state === 'completed' ? '今日投委会决策' : '最近交易日投委会决策'}
-        description="核对下一交易日预测、证据新鲜度与今日任务进度。"
+        description="核对下一交易日预测、证据状态与今日任务进度。"
         actions={
           <div className="as-of-block">
             <CalendarDays size={17} />
@@ -189,6 +314,11 @@ export function Dashboard() {
         <div>
           <span className="eyebrow">封签结果</span>
           <h2 id="forecast-board-heading">标的预测矩阵</h2>
+        </div>
+        <div className="horizon-identity compact" aria-label="预测周期：下一交易日">
+          <span>预测周期</span>
+          <strong>D1</strong>
+          <small>下一交易日</small>
         </div>
       </div>
 
@@ -295,4 +425,11 @@ export function Dashboard() {
       )}
     </div>
   )
+}
+
+export function Dashboard() {
+  const program = useResearchProgramV2()
+  if (program.isLoading) return <LoadingPanel />
+  if (program.data) return <FocusedDashboard program={program.data} />
+  return <LegacyDashboard />
 }

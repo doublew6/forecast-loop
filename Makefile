@@ -1,4 +1,4 @@
-.PHONY: install install-hooks public-preflight public-preflight-staged public-preflight-range dev backend worker frontend test lint build release-artifacts release-history-audit demo benchmark-verify snapshot prediction-snapshot codex-prepare codex-finalize codex-retry reflection-prepare reflection-freeze-sources reflection-finalize reflection-review reflection-render lesson-replay lesson-approve lesson-revalidate lesson-due lesson-verify judgment-record judgment-export judgment-verify market-snapshot market-import market-block migrate database-status migration-smoke recovery-backup recovery-verify recovery-restore docker-config docker-smoke docker-up docker-down
+.PHONY: install install-hooks public-preflight public-preflight-staged public-preflight-range dev backend worker frontend test lint build release-artifacts release-history-audit demo benchmark-verify agent-eval agent-eval-list agent-eval-prepare agent-eval-finalize agent-eval-status research-v2-prepare research-v2-finalize research-v2-shadow-manual research-v2-shadow-quant research-v2-reasoning-finalize research-v2-shadow-reasoning-finalize research-v2-reasoning-review research-v2-evaluate research-v2-reflection-create research-v2-reflection-review research-v2-activate snapshot prediction-snapshot codex-prepare codex-finalize codex-retry reflection-prepare reflection-freeze-sources reflection-finalize reflection-review reflection-render lesson-replay lesson-approve lesson-revalidate lesson-due lesson-verify judgment-record judgment-export judgment-verify market-snapshot market-import market-block migrate database-status migration-smoke recovery-backup recovery-verify recovery-restore docker-config docker-smoke docker-up docker-down
 
 PYTHON ?= .venv/bin/python
 RELEASE_VERSION ?= 0.1.0
@@ -63,6 +63,69 @@ demo:
 
 benchmark-verify:
 	PYTHONPATH=backend $(PYTHON) -m app.cli benchmark verify benchmarks/cross-source-v1
+
+agent-eval:
+	@test -n "$(ARGS)" || (echo 'usage: make agent-eval ARGS="--suite agent-workflow-v1 --baseline baseline-v1 --candidate candidate-v2"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli agent-eval run $(ARGS)
+
+agent-eval-list:
+	PYTHONPATH=backend $(PYTHON) -m app.cli agent-eval list
+
+agent-eval-prepare:
+	@test -n "$(ARGS)" || (echo 'usage: make agent-eval-prepare ARGS="--suite SUITE --baseline BASELINE --candidate CANDIDATE [--source private]"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli agent-eval prepare $(ARGS)
+
+agent-eval-finalize:
+	@test -n "$(ARGS)" || (echo 'usage: make agent-eval-finalize ARGS="/absolute/job/path/from-prepare"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli agent-eval finalize $(ARGS)
+
+agent-eval-status:
+	@test -n "$(ARGS)" || (echo 'usage: make agent-eval-status ARGS="/absolute/job/path/from-prepare"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli agent-eval status $(ARGS)
+
+research-v2-prepare:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-prepare ARGS="--mode demo|live --snapshot /absolute/snapshot.json"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 prepare $(ARGS)
+
+research-v2-finalize:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-finalize ARGS="/absolute/job/path"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 finalize $(ARGS)
+
+research-v2-shadow-manual:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-shadow-manual ARGS="/absolute/manual-shadow-input.json"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 shadow-manual $(ARGS)
+
+research-v2-shadow-quant:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-shadow-quant ARGS="RUN_ID --root /trusted/bundle/root --manifest relative/manifest.json"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 shadow-quant $(ARGS)
+
+research-v2-reasoning-finalize:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-reasoning-finalize ARGS="/absolute/job/path"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 reasoning-finalize $(ARGS)
+
+research-v2-shadow-reasoning-finalize:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-shadow-reasoning-finalize ARGS="/absolute/shadow-reasoning/job/path"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 shadow-reasoning-finalize $(ARGS)
+
+research-v2-reasoning-review:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-reasoning-review ARGS="REVIEW_ID --decision approved|rejected --reviewer NAME"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 reasoning-review $(ARGS)
+
+research-v2-evaluate:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-evaluate ARGS="/absolute/outcome.json"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 evaluate $(ARGS)
+
+research-v2-reflection-create:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-reflection-create ARGS="/absolute/reflection.json"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 reflection-create $(ARGS)
+
+research-v2-reflection-review:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-reflection-review ARGS="REFLECTION_ID --decision approved|rejected --reviewer NAME"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 reflection-review $(ARGS)
+
+research-v2-activate:
+	@test -n "$(ARGS)" || (echo 'usage: make research-v2-activate ARGS="--agent-eval-report /absolute/report.json --actor NAME"' && exit 2)
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 activate $(ARGS)
 
 snapshot:
 	@test -n "$(DRAFT)" -a -n "$(OUTPUT)" || (echo "usage: make snapshot DRAFT=path OUTPUT=path" && exit 2)

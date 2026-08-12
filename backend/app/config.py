@@ -79,6 +79,46 @@ class Settings(BaseSettings):
         default=REPOSITORY_ROOT / "data" / "user-wiki",
         validation_alias="VERICOUNCIL_USER_JUDGMENT_WIKI_ROOT",
     )
+    agent_eval_public_root: Path = Field(
+        default=REPOSITORY_ROOT / "benchmarks",
+        validation_alias="FORECAST_LOOP_AGENT_EVAL_PUBLIC_ROOT",
+    )
+    agent_eval_private_root: Path = Field(
+        default=REPOSITORY_ROOT / "data" / "evals",
+        validation_alias="FORECAST_LOOP_AGENT_EVAL_PRIVATE_ROOT",
+    )
+    agent_eval_outcome_root: Path = Field(
+        default=REPOSITORY_ROOT / "data" / "eval-outcomes",
+        validation_alias="FORECAST_LOOP_AGENT_EVAL_OUTCOME_ROOT",
+    )
+    agent_eval_release_candidate_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        validation_alias="FORECAST_LOOP_AGENT_EVAL_RELEASE_CANDIDATE_HASH",
+    )
+    agent_trace_enabled: bool = Field(
+        default=True,
+        validation_alias="FORECAST_LOOP_AGENT_TRACE_ENABLED",
+    )
+    agent_trace_summary_max_chars: int = Field(
+        default=600,
+        ge=80,
+        le=4000,
+        validation_alias="FORECAST_LOOP_AGENT_TRACE_SUMMARY_MAX_CHARS",
+    )
+    agent_trace_storage_warning_bytes: int = Field(
+        default=1024 * 1024 * 1024,
+        ge=1024 * 1024,
+        validation_alias="FORECAST_LOOP_AGENT_TRACE_STORAGE_WARNING_BYTES",
+    )
+    otlp_traces_endpoint: str | None = Field(
+        default=None,
+        validation_alias="OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    )
+    agent_trace_external_url: str | None = Field(
+        default=None,
+        validation_alias="FORECAST_LOOP_AGENT_TRACE_EXTERNAL_URL",
+    )
     user_judgment_actor_id: str = Field(
         default="local-operator",
         min_length=1,
@@ -92,6 +132,12 @@ class Settings(BaseSettings):
     user_judgment_market_open: time = Field(
         default=time(9, 30),
         validation_alias="VERICOUNCIL_USER_JUDGMENT_MARKET_OPEN",
+    )
+    v2_shadow_submission_window_minutes: int = Field(
+        default=120,
+        ge=5,
+        le=24 * 60,
+        validation_alias="FORECAST_LOOP_V2_SHADOW_SUBMISSION_WINDOW_MINUTES",
     )
     evidence_snapshot_builder: Path | None = Field(
         default=None,
@@ -188,6 +234,19 @@ class Settings(BaseSettings):
 
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator(
+        "otlp_traces_endpoint",
+        "agent_trace_external_url",
+        "agent_eval_release_candidate_hash",
+        mode="before",
+    )
+    @classmethod
+    def blank_optional_url_is_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
         return value
 
     @field_validator("user_judgment_actor_id", mode="before")

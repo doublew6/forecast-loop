@@ -34,7 +34,37 @@ from .jobs import (
 from .market_universe import MarketUniverseSpec, load_market_universe
 from .models import UserJudgment
 from .quant_contracts import QuantInputSnapshot, QuantSignalBundle
+from .research_v2 import (
+    AgentSignalEnvelopeV2,
+    CodexHandoffRequestV3,
+    EvidenceSnapshotV2,
+    ReflectionDraftV2,
+    ResearchProgramV2,
+)
 from .schemas import UserJudgmentCreate
+from .services.agent_evaluation import (
+    AgentEvalError,
+    AgentEvalStore,
+    EvalRunRequest,
+    enqueue_experiment,
+    run_next_eval_task,
+)
+from .services.agent_evaluation_v2 import (
+    AgentEvalAblationDraftV2,
+    AgentEvalAblationInputV2,
+    AgentEvalDraftV2,
+    AgentEvalInputV2,
+    AgentEvalReportV2,
+    AgentEvalReviewDraftV2,
+    AgentEvalReviewInputV2,
+    AgentEvalSuiteV2,
+    AgentEvalV2Error,
+    AgentEvalV2Store,
+    agent_eval_v2_status,
+    finalize_agent_eval_v2,
+    prepare_agent_eval_v2,
+)
+from .services.agent_tracing import TraceRecorder
 from .services.audit_bundle import export_audit_bundle, verify_audit_bundle
 from .services.benchmark import (
     DEFAULT_BENCHMARK_ROOT,
@@ -55,6 +85,24 @@ from .services.recovery import (
     create_backup,
     restore_backup,
     verify_backup,
+)
+from .services.research_v2 import (
+    ResearchV2Error,
+    activate_d1_v2,
+    create_reflection_v2,
+    evaluate_research_target,
+    finalize_reasoning_review,
+    finalize_research_run,
+    prepare_research_run,
+    review_reasoning,
+    review_reflection_v2,
+)
+from .services.research_v2_shadow import (
+    ManualShadowInputV2,
+    admit_manual_shadow_signal_v2,
+    admit_quant_shadow_signal_v2,
+    finalize_shadow_reasoning_review_v2,
+    seal_manual_shadow_input_v2,
 )
 from .services.run_bundle import export_run_bundle, verify_run_bundle
 from .services.schema_readiness import (
@@ -94,6 +142,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _worker_command(args)
     if args.command == "benchmark":
         return _benchmark_command(args)
+    if args.command == "agent-eval":
+        return _agent_eval_command(args)
+    if args.command == "research-v2":
+        return _research_v2_command(args)
     if args.command == "database":
         return _database_command(args)
     if args.command == "recovery":
@@ -380,6 +432,19 @@ def _parser() -> argparse.ArgumentParser:
             "quant-signal-bundle",
             "quant-input-snapshot",
             "market-universe",
+            "agent-eval-suite-v2",
+            "agent-eval-input-v2",
+            "agent-eval-drafts-v2",
+            "agent-eval-review-input-v2",
+            "agent-eval-review-draft-v2",
+            "agent-eval-ablation-input-v2",
+            "agent-eval-ablation-draft-v2",
+            "agent-eval-report-v2",
+            "research-program-v2",
+            "evidence-snapshot-v2",
+            "agent-signal-v2",
+            "codex-handoff-v3",
+            "reflection-v2",
         ),
     )
 
@@ -442,6 +507,158 @@ def _parser() -> argparse.ArgumentParser:
         default=REPOSITORY_ROOT / DEFAULT_BENCHMARK_ROOT,
     )
     benchmark_verify.add_argument("--golden", type=Path, default=None)
+
+    agent_eval = commands.add_parser(
+        "agent-eval",
+        help="Run versioned offline Agent workflow benchmarks and release gates.",
+    )
+    agent_eval_commands = agent_eval.add_subparsers(
+        dest="agent_eval_command",
+        required=True,
+    )
+    agent_eval_list = agent_eval_commands.add_parser(
+        "list",
+        help="List validated public and private Agent evaluation suites.",
+    )
+    agent_eval_list.add_argument("--database-url", default=None)
+    agent_eval_run = agent_eval_commands.add_parser(
+        "run",
+        help="Queue and execute one deterministic offline comparison.",
+    )
+    agent_eval_run.add_argument("--suite", required=True)
+    agent_eval_run.add_argument("--suite-version", default=None)
+    agent_eval_run.add_argument("--baseline", required=True)
+    agent_eval_run.add_argument("--candidate", required=True)
+    agent_eval_run.add_argument(
+        "--source",
+        choices=("public", "private"),
+        default="public",
+    )
+    agent_eval_run.add_argument("--idempotency-key", default=None)
+    agent_eval_run.add_argument("--database-url", default=None)
+    agent_eval_prepare = agent_eval_commands.add_parser(
+        "prepare",
+        help="Freeze an outcome-blind v2 replay handoff for two draft arms.",
+    )
+    agent_eval_prepare.add_argument("--suite", required=True)
+    agent_eval_prepare.add_argument("--suite-version", default=None)
+    agent_eval_prepare.add_argument("--baseline", required=True)
+    agent_eval_prepare.add_argument("--candidate", required=True)
+    agent_eval_prepare.add_argument(
+        "--source",
+        choices=("public", "private"),
+        default="private",
+    )
+    agent_eval_prepare.add_argument("--output-root", type=Path, default=None)
+    agent_eval_finalize = agent_eval_commands.add_parser(
+        "finalize",
+        help="Validate v2 drafts, reveal trusted outcomes, and seal the report.",
+    )
+    agent_eval_finalize.add_argument("job_dir", type=Path)
+    agent_eval_finalize.add_argument("--output-root", type=Path, default=None)
+    agent_eval_status = agent_eval_commands.add_parser(
+        "status",
+        help="Report whether a v2 handoff awaits drafts, is ready, or completed.",
+    )
+    agent_eval_status.add_argument("job_dir", type=Path)
+    agent_eval_status.add_argument("--output-root", type=Path, default=None)
+    agent_eval_commands.add_parser(
+        "list-v2",
+        help="List validated public and private Agent evaluation v2 suites.",
+    )
+
+    research_v2 = commands.add_parser(
+        "research-v2",
+        help="Operate the focused v2 file handoff, scoring, reviews, and activation.",
+    )
+    research_v2_commands = research_v2.add_subparsers(
+        dest="research_v2_command",
+        required=True,
+    )
+    research_prepare = research_v2_commands.add_parser(
+        "prepare",
+        help="Freeze a v2 snapshot and create an outcome-blind Codex task.",
+    )
+    research_prepare.add_argument("--snapshot", type=Path, required=True)
+    research_prepare.add_argument("--mode", choices=("demo", "live"), required=True)
+    research_prepare.add_argument("--database-url", default=None)
+    research_finalize = research_v2_commands.add_parser(
+        "finalize",
+        help="Validate v2 drafts, derive CIO, and persist append-only records.",
+    )
+    research_finalize.add_argument("job_dir", type=Path)
+    research_finalize.add_argument("--database-url", default=None)
+    reasoning_finalize = research_v2_commands.add_parser(
+        "reasoning-finalize",
+        help="Finalize the blind reasoning review file task.",
+    )
+    reasoning_finalize.add_argument("job_dir", type=Path)
+    reasoning_finalize.add_argument("--database-url", default=None)
+    shadow_reasoning_finalize = research_v2_commands.add_parser(
+        "shadow-reasoning-finalize",
+        help="Finalize one outcome-blind late Manual/Quant shadow review task.",
+    )
+    shadow_reasoning_finalize.add_argument("job_dir", type=Path)
+    shadow_reasoning_finalize.add_argument("--database-url", default=None)
+    reasoning_review = research_v2_commands.add_parser(
+        "reasoning-review",
+        help="Append one required human blind-review decision.",
+    )
+    reasoning_review.add_argument("review_id")
+    reasoning_review.add_argument(
+        "--decision",
+        choices=("approved", "rejected"),
+        required=True,
+    )
+    reasoning_review.add_argument("--reviewer", required=True)
+    reasoning_review.add_argument("--notes-file", type=Path, default=None)
+    reasoning_review.add_argument("--database-url", default=None)
+    research_evaluate = research_v2_commands.add_parser(
+        "evaluate",
+        help="Load one trusted, sealed target outcome and score v2 signals.",
+    )
+    research_evaluate.add_argument("observation", type=Path)
+    research_evaluate.add_argument("--database-url", default=None)
+    shadow_manual = research_v2_commands.add_parser(
+        "shadow-manual",
+        help="Append one explicit CSI1000 D1 Manual shadow probability submission.",
+    )
+    shadow_manual.add_argument("submission", type=Path)
+    shadow_manual.add_argument("--database-url", default=None)
+    shadow_quant = research_v2_commands.add_parser(
+        "shadow-quant",
+        help="Append the exact CSI1000 D1 signal from a verified Quant bundle.",
+    )
+    shadow_quant.add_argument("run_id")
+    shadow_quant.add_argument("--root", type=Path, required=True)
+    shadow_quant.add_argument("--manifest", type=Path, required=True)
+    shadow_quant.add_argument("--database-url", default=None)
+    reflection_create = research_v2_commands.add_parser(
+        "reflection-create",
+        help="Create one target-scoped v2 reflection.",
+    )
+    reflection_create.add_argument("draft", type=Path)
+    reflection_create.add_argument("--database-url", default=None)
+    reflection_review = research_v2_commands.add_parser(
+        "reflection-review",
+        help="Append one immutable reflection approval.",
+    )
+    reflection_review.add_argument("reflection_id")
+    reflection_review.add_argument(
+        "--decision",
+        choices=("approved", "rejected"),
+        required=True,
+    )
+    reflection_review.add_argument("--reviewer", required=True)
+    reflection_review.add_argument("--notes-file", type=Path, default=None)
+    reflection_review.add_argument("--database-url", default=None)
+    research_activate = research_v2_commands.add_parser(
+        "activate",
+        help="Append the D1 activation event after every release gate passes.",
+    )
+    research_activate.add_argument("--agent-eval-report", type=Path, required=True)
+    research_activate.add_argument("--actor", required=True)
+    research_activate.add_argument("--database-url", default=None)
 
     database = commands.add_parser(
         "database",
@@ -969,6 +1186,19 @@ def _contract_command(args: argparse.Namespace) -> int:
         "quant-signal-bundle": QuantSignalBundle,
         "quant-input-snapshot": QuantInputSnapshot,
         "market-universe": MarketUniverseSpec,
+        "agent-eval-suite-v2": AgentEvalSuiteV2,
+        "agent-eval-input-v2": AgentEvalInputV2,
+        "agent-eval-drafts-v2": AgentEvalDraftV2,
+        "agent-eval-review-input-v2": AgentEvalReviewInputV2,
+        "agent-eval-review-draft-v2": AgentEvalReviewDraftV2,
+        "agent-eval-ablation-input-v2": AgentEvalAblationInputV2,
+        "agent-eval-ablation-draft-v2": AgentEvalAblationDraftV2,
+        "agent-eval-report-v2": AgentEvalReportV2,
+        "research-program-v2": ResearchProgramV2,
+        "evidence-snapshot-v2": EvidenceSnapshotV2,
+        "agent-signal-v2": AgentSignalEnvelopeV2,
+        "codex-handoff-v3": CodexHandoffRequestV3,
+        "reflection-v2": ReflectionDraftV2,
     }
     contract = contracts[args.contract_name]
     _print_json(contract.model_json_schema())
@@ -996,6 +1226,7 @@ def _worker_command(args: argparse.Namespace) -> int:
             settings=settings,
             database=database,
             wiki=wiki,
+            trace_recorder=TraceRecorder(database, settings),
         )
         queue = PersistentTaskQueue(
             database,
@@ -1066,6 +1297,319 @@ def _benchmark_command(args: argparse.Namespace) -> int:
         }
     )
     return 0
+
+
+def _agent_eval_command(args: argparse.Namespace) -> int:
+    settings = Settings()
+    if getattr(args, "database_url", None) is not None:
+        settings = settings.model_copy(update={"database_url": args.database_url})
+    if args.agent_eval_command == "list":
+        _print_json(
+            {
+                "items": [
+                    item.model_dump(mode="json")
+                    for item in AgentEvalStore(settings).list_suites()
+                ]
+            }
+        )
+        return 0
+    if args.agent_eval_command == "list-v2":
+        _print_json(
+            {
+                "items": [
+                    item.model_dump(mode="json")
+                    for item in AgentEvalV2Store(settings).list_suites()
+                ]
+            }
+        )
+        return 0
+    try:
+        if args.agent_eval_command == "prepare":
+            _print_json(
+                prepare_agent_eval_v2(
+                    settings,
+                    suite_id=args.suite,
+                    suite_version=args.suite_version,
+                    source=args.source,
+                    baseline_arm_id=args.baseline,
+                    candidate_arm_id=args.candidate,
+                    output_root=args.output_root,
+                )
+            )
+            return 0
+        if args.agent_eval_command == "status":
+            _print_json(
+                agent_eval_v2_status(
+                    settings,
+                    args.job_dir,
+                    output_root=args.output_root,
+                )
+            )
+            return 0
+        if args.agent_eval_command == "finalize":
+            database = Database(settings.database_url)
+            try:
+                require_schema_current(database.engine)
+                report = finalize_agent_eval_v2(
+                    settings,
+                    args.job_dir,
+                    output_root=args.output_root,
+                    database=database,
+                )
+                _print_json(report.model_dump(mode="json"))
+                return 0 if report.release_decision == "pass" else 1
+            finally:
+                database.dispose()
+    except AgentEvalV2Error as exc:
+        raise SystemExit(str(exc)) from exc
+
+    database = Database(settings.database_url)
+    try:
+        try:
+            require_schema_current(database.engine)
+        except SchemaNotReadyError as exc:
+            raise SystemExit(str(exc)) from exc
+        request = EvalRunRequest(
+            suite_id=args.suite,
+            suite_version=args.suite_version,
+            baseline_target_id=args.baseline,
+            candidate_target_id=args.candidate,
+            source=args.source,
+        )
+        idempotency_key = args.idempotency_key or (
+            f"cli:{args.suite}:{args.suite_version or 'latest'}:"
+            f"{args.baseline}:{args.candidate}"
+        )
+        enqueue_experiment(
+            database,
+            settings,
+            request,
+            idempotency_key=idempotency_key,
+        )
+        experiment = run_next_eval_task(
+            database,
+            settings,
+            worker_id=f"agent-eval-cli-{uuid4().hex[:12]}",
+        )
+        if experiment is None:
+            raise AgentEvalError("no queued Agent evaluation task is available")
+        _print_json(
+            {
+                "status": experiment.status,
+                "experiment_id": experiment.id,
+                "release_decision": experiment.release_decision,
+                "report_hash": experiment.report_hash,
+                "summary": experiment.summary,
+            }
+        )
+        return 0 if experiment.release_decision == "pass" else 1
+    except AgentEvalError as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        database.dispose()
+
+
+def _research_v2_command(args: argparse.Namespace) -> int:
+    settings = Settings()
+    if args.database_url is not None:
+        settings = settings.model_copy(update={"database_url": args.database_url})
+    database = Database(settings.database_url)
+    try:
+        try:
+            require_schema_current(database.engine)
+        except SchemaNotReadyError as exc:
+            raise SystemExit(str(exc)) from exc
+        command = args.research_v2_command
+        if command == "prepare":
+            job_dir = prepare_research_run(
+                database,
+                settings,
+                snapshot_path=args.snapshot,
+                mode=args.mode,
+            )
+            _print_json(
+                {
+                    "status": "awaiting_draft",
+                    "job_dir": str(job_dir.resolve()),
+                    "drafts_file": str((job_dir / "drafts.json").resolve()),
+                }
+            )
+            return 0
+        if command == "finalize":
+            row = finalize_research_run(database, settings, job_dir=args.job_dir)
+            _print_json(
+                {
+                    "status": row.status,
+                    "run_id": row.id,
+                    "receipt": row.receipt,
+                    "reasoning_job_dir": str((args.job_dir / "reasoning").resolve()),
+                }
+            )
+            return 0
+        if command == "reasoning-finalize":
+            rows = finalize_reasoning_review(database, settings, job_dir=args.job_dir)
+            _print_json(
+                {
+                    "status": "completed",
+                    "items": [
+                        {
+                            "review_id": row.id,
+                            "signal_id": row.signal_id,
+                            "total_score": row.total_score,
+                            "human_review_required": row.human_review_required,
+                            "human_review_status": row.human_review_status,
+                        }
+                        for row in rows
+                    ],
+                }
+            )
+            return 0
+        if command == "shadow-reasoning-finalize":
+            row = finalize_shadow_reasoning_review_v2(
+                database,
+                settings,
+                job_dir=args.job_dir,
+            )
+            _print_json(
+                {
+                    "status": "completed",
+                    "review_id": row.id,
+                    "signal_id": row.signal_id,
+                    "total_score": row.total_score,
+                    "human_review_required": row.human_review_required,
+                    "human_review_status": row.human_review_status,
+                }
+            )
+            return 0
+        if command == "reasoning-review":
+            notes = _optional_private_text(args.notes_file, label="review notes")
+            row = review_reasoning(
+                database,
+                settings,
+                review_id=args.review_id,
+                decision=args.decision,
+                reviewer=args.reviewer,
+                notes=notes,
+            )
+            _print_json({"status": args.decision, "review_id": row.id})
+            return 0
+        if command == "evaluate":
+            rows = evaluate_research_target(
+                database,
+                settings,
+                observation_path=args.observation,
+            )
+            _print_json(
+                {
+                    "status": "completed",
+                    "evaluated_signals": len(rows),
+                    "evaluation_ids": [row.id for row in rows],
+                }
+            )
+            return 0
+        if command == "shadow-manual":
+            payload = json.loads(
+                _read_private_bytes(
+                    args.submission,
+                    label="v2 Manual shadow input",
+                    maximum_bytes=2 * 1024 * 1024,
+                )
+            )
+            if not isinstance(payload, dict):
+                raise ValueError("v2 Manual shadow input must be a JSON object")
+            submission = (
+                ManualShadowInputV2.model_validate(payload)
+                if "content_hash" in payload
+                else seal_manual_shadow_input_v2(payload)
+            )
+            row = admit_manual_shadow_signal_v2(
+                database,
+                settings,
+                submission=submission,
+            )
+            _print_json(
+                {
+                    "status": "completed",
+                    "signal_id": row.id,
+                    "agent_id": row.agent_id,
+                    "target_id": row.target_id,
+                    "horizon": row.natural_horizon,
+                    "participation": "shadow",
+                    "formal_forecast_influence": "none",
+                }
+            )
+            return 0
+        if command == "shadow-quant":
+            row = admit_quant_shadow_signal_v2(
+                database,
+                settings,
+                run_id=args.run_id,
+                quant_root=args.root,
+                manifest_path=args.manifest,
+            )
+            _print_json(
+                {
+                    "status": "completed",
+                    "signal_id": row.id,
+                    "agent_id": row.agent_id,
+                    "target_id": row.target_id,
+                    "horizon": row.natural_horizon,
+                    "participation": "shadow",
+                    "formal_forecast_influence": "none",
+                }
+            )
+            return 0
+        if command == "reflection-create":
+            draft = ReflectionDraftV2.model_validate_json(
+                _read_private_bytes(
+                    args.draft,
+                    label="v2 reflection draft",
+                    maximum_bytes=2 * 1024 * 1024,
+                )
+            )
+            row = create_reflection_v2(database, settings, draft=draft)
+            _print_json(
+                {
+                    "status": row.status,
+                    "reflection_id": row.id,
+                    "content_hash": row.content_hash,
+                }
+            )
+            return 0
+        if command == "reflection-review":
+            notes = _optional_private_text(
+                args.notes_file,
+                label="reflection review notes",
+            )
+            row = review_reflection_v2(
+                database,
+                settings,
+                reflection_id=args.reflection_id,
+                decision=args.decision,
+                reviewer=args.reviewer,
+                notes=notes,
+            )
+            _print_json({"status": args.decision, "reflection_id": row.id})
+            return 0
+        row = activate_d1_v2(
+            database,
+            settings,
+            actor=args.actor,
+            agent_eval_report_path=args.agent_eval_report,
+        )
+        _print_json(
+            {
+                "status": row.event_type,
+                "activation_event_id": row.id,
+                "target_id": row.target_id,
+                "content_hash": row.content_hash,
+            }
+        )
+        return 0
+    except (ResearchV2Error, ValidationError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        database.dispose()
 
 
 def _database_command(args: argparse.Namespace) -> int:
@@ -1140,12 +1684,12 @@ def _recovery_command(args: argparse.Namespace) -> int:
         raise SystemExit(str(exc)) from exc
 
 
-def _read_private_text(
+def _read_private_bytes(
     path: Path,
     *,
     label: str,
     maximum_bytes: int,
-) -> str:
+) -> bytes:
     source = path.expanduser()
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
@@ -1175,10 +1719,26 @@ def _read_private_text(
         or after.st_size != len(content)
     ):
         raise SystemExit(f"{label} file changed while it was read")
+    return content
+
+
+def _read_private_text(
+    path: Path,
+    *,
+    label: str,
+    maximum_bytes: int,
+) -> str:
+    content = _read_private_bytes(path, label=label, maximum_bytes=maximum_bytes)
     try:
         return content.decode("utf-8").strip()
     except UnicodeDecodeError as exc:
         raise SystemExit(f"{label} file must be UTF-8") from exc
+
+
+def _optional_private_text(path: Path | None, *, label: str) -> str:
+    if path is None:
+        return ""
+    return _read_private_text(path, label=label, maximum_bytes=32 * 1024)
 
 
 def _validate_job_project(prompt: str, project_root: Path) -> Path:

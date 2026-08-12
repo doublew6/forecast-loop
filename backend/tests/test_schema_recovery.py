@@ -38,6 +38,8 @@ from app.services.schema_readiness import (
     upgrade_database,
 )
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 from scripts.migration_smoke import run_migration_smoke
 
@@ -71,6 +73,89 @@ def test_runtime_requires_an_explicit_migration(tmp_path) -> None:
     assert migrated.ready is True
     with TestClient(create_app(settings)) as client:
         assert client.get("/api/health").status_code == 200
+
+
+def test_fresh_migration_installs_v2_terminal_and_append_only_guards(
+    tmp_path,
+) -> None:
+    """0001 may pre-create current tables; 0015 must still install its guards."""
+
+    database_url = f"sqlite:///{tmp_path / 'fresh-v2-guards.sqlite3'}"
+    assert upgrade_database(database_url).ready is True
+    engine = create_engine(database_url, future=True)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO research_runs_v2 "
+                    "(id, schema_version, program_hash, snapshot_hash, input_hash, "
+                    "request_hash, mode, status, anchor_date, as_of, data_cutoff, "
+                    "prepared_at, completed_at, error, program, snapshot, receipt) "
+                    "VALUES (:id, :schema, :hash, :hash, :input_hash, NULL, 'demo', "
+                    "'completed', '2026-08-12', :time, :time, :time, :time, NULL, "
+                    "'{}', '{}', '{}')"
+                ),
+                {
+                    "id": "fresh-v2-guard-run",
+                    "schema": "forecast-loop.research-run/v2",
+                    "hash": "a" * 64,
+                    "input_hash": "b" * 64,
+                    "time": "2026-08-12 20:30:00+08:00",
+                },
+            )
+        with pytest.raises(IntegrityError, match="terminal v2 research run is immutable"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE research_runs_v2 SET error = 'tampered' "
+                        "WHERE id = 'fresh-v2-guard-run'"
+                    )
+                )
+    finally:
+        engine.dispose()
+
+
+def test_migration_from_0011_preserves_v1_data_and_round_trips_v2(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'from-0011.sqlite3'}"
+    assert upgrade_database(database_url).ready is True
+    downgrade_database(database_url, "0011_market_universe_identity")
+    engine = create_engine(database_url, future=True)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO workflow_runs "
+                    "(id, as_of, data_cutoff, status, mode, started_at, completed_at, "
+                    "duration_seconds, error, data_quality, workflow_steps, input_hash, "
+                    "market_universe_hash) VALUES "
+                    "(:id, :time, :time, 'completed', 'demo', :time, :time, 1, NULL, "
+                    ":quality, '[]', :input_hash, :universe_hash)"
+                ),
+                {
+                    "id": "v1-preserved-through-v2",
+                    "time": "2026-08-12 15:00:00+08:00",
+                    "quality": '{"fixture":"synthetic"}',
+                    "input_hash": "a" * 64,
+                    "universe_hash": "b" * 64,
+                },
+            )
+        assert upgrade_database(database_url).ready is True
+        with engine.connect() as connection:
+            preserved = connection.execute(
+                text(
+                    "SELECT input_hash, data_quality FROM workflow_runs "
+                    "WHERE id = 'v1-preserved-through-v2'"
+                )
+            ).one()
+            assert tuple(preserved) == (
+                "a" * 64,
+                '{"fixture":"synthetic"}',
+            )
+
+        downgrade_database(database_url, "0014_trace_attempts")
+        assert upgrade_database(database_url).ready is True
+    finally:
+        engine.dispose()
 
 
 def test_schema_status_rejects_an_unversioned_create_all_database(tmp_path) -> None:

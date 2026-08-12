@@ -21,6 +21,7 @@ from ..db import Database
 from ..domain import RunStatus, TaskStatus
 from ..market_universe import DEFAULT_MARKET_UNIVERSE
 from ..models import WorkflowRun, WorkflowTask
+from .v1_run_admission import assert_v1_run_creation_allowed
 
 if TYPE_CHECKING:
     from ..workflow import CommitteeWorkflow, PreparedRun
@@ -129,6 +130,7 @@ class PersistentTaskQueue:
         payload_hash = _payload_hash(payload)
         now = self._now()
         with self.database.session_factory() as session:
+            assert_v1_run_creation_allowed(session)
             existing = session.scalar(
                 select(WorkflowTask).where(WorkflowTask.idempotency_key == key)
             )

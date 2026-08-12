@@ -82,6 +82,14 @@ its activation and never rewrites historical forecasts. See
 [Markets and targets](docs/market-universes.md) and
 [credibility governance](docs/believability.md).
 
+The focused research v2 program makes `csi1000-absolute-d1` the only target
+eligible for formal activation. It also keeps a CSI 1000 versus CSI 300 W1
+shadow target and records macro and industry views at their natural horizons
+as separate auditable signals. It runs append-only beside the existing
+five-index history, without backfilling old records or turning every data
+instrument into a forecast target. See the
+[focused multi-horizon research protocol v2](docs/research-program-v2.md).
+
 ## Architecture
 
 ```text
@@ -102,6 +110,13 @@ read-only sources + versioned Wiki
                v
  evaluation -> reflection -> gated lessons
 ```
+
+Model and workflow changes use a separate Agent Eval loop. It freezes matched
+baseline and candidate inputs, collects outcome-blind forecast, reasoning, and
+ablation drafts, then applies deterministic release gates per target.
+Prediction, Reflection, and evaluation runs also emit sanitized local traces;
+telemetry failures never change formal results. See
+[Agent evaluation and observability](docs/agent-evaluation-observability.md).
 
 The backend uses FastAPI, LangChain, and LangGraph. The frontend uses React,
 TypeScript, and Vite. Local state, forecasts, and evaluations are stored in
@@ -297,6 +312,8 @@ make build
 
 ## Documentation
 
+- [Focused multi-horizon research protocol v2](docs/research-program-v2.md)
+- [Agent evaluation and observability](docs/agent-evaluation-observability.md)
 - [Architecture](docs/architecture.md)
 - [Agent framework model](docs/agent-model.md)
 - [Markets and targets](docs/market-universes.md)
