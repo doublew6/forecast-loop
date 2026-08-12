@@ -65,6 +65,12 @@ Agent 数量、表达气势或单次盈亏。
 详见[市场与标的配置](docs/market-universes.md)和
 [可信度治理](docs/believability.md)。
 
+新的 focused research v2 以 `csi1000-absolute-d1` 作为唯一可激活的正式目标，另设
+中证1000相对沪深300的 W1 Shadow 目标，并把宏观、行业等自然周期判断作为独立、可审计
+信号保存。它与既有五指数历史追加式并行，既不回填旧记录，也不把数据工具自动变成预测
+目标。完整契约、运行步骤与激活门禁见
+[单主标的、多周期研究协议 v2](docs/research-program-v2.md)。
+
 ## Architecture
 
 ```text
@@ -85,6 +91,11 @@ read-only sources + versioned Wiki
                v
  evaluation -> reflection -> gated lessons
 ```
+
+模型与工作流迭代使用独立的 Agent Eval 闭环：冻结 baseline/candidate 输入，在结果揭示前
+分别生成预测、推理审核和 ablation 草稿，再由确定性程序计算按目标划分的发布门禁。预测、
+Reflection 和评测也会生成裁剪后的本地 trace；遥测故障不改变正式结果。详见
+[Agent 评测与可观测性](docs/agent-evaluation-observability.md)。
 
 后端使用 FastAPI、LangChain 和 LangGraph；前端使用 React、TypeScript 和 Vite；本地状态、
 预测和评价保存在 SQLite。运行者自己的 Agent Wiki 默认保存在被 Git 忽略的
@@ -250,6 +261,8 @@ make build
 
 ## Documentation
 
+- [单主标的、多周期研究协议 v2](docs/research-program-v2.md)
+- [Agent 评测与可观测性](docs/agent-evaluation-observability.md)
 - [系统架构](docs/architecture.md)
 - [Agent 框架模型](docs/agent-model.md)
 - [市场与标的配置](docs/market-universes.md)

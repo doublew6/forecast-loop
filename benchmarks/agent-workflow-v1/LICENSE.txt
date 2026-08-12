@@ -1,0 +1,7 @@
+SPDX-License-Identifier: CC0-1.0
+
+The synthetic data in this benchmark fixture is dedicated to the public domain
+under CC0 1.0 Universal. To the extent possible under law, the contributors
+waive all copyright and related or neighboring rights in these fixture records.
+
+Full terms: https://creativecommons.org/publicdomain/zero/1.0/legalcode

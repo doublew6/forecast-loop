@@ -1,0 +1,1364 @@
+{
+  "schema_version": "forecast-loop.agent-eval-suite/v1",
+  "suite_id": "agent-workflow-v1",
+  "version": "1.0.0",
+  "title": "Agent Workflow Contract Benchmark",
+  "description": "Synthetic public benchmark for workflow trajectory, deterministic gates, quality, latency and token release checks.",
+  "synthetic": true,
+  "runner_kind": "fixture",
+  "targets": [
+    {
+      "target_id": "baseline-v1",
+      "version": "1.0.0",
+      "description": "Frozen public baseline fixture",
+      "model_name": "synthetic-baseline",
+      "workflow_version": "0.5.0",
+      "prompt_version": "fixture-v1"
+    },
+    {
+      "target_id": "candidate-v2",
+      "version": "2.0.0",
+      "description": "Frozen public candidate fixture",
+      "model_name": "synthetic-candidate",
+      "workflow_version": "0.5.0",
+      "prompt_version": "fixture-v2"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "synthetic-prediction-01",
+      "title": "Synthetic prediction contract case 01",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "must-pass"
+      ],
+      "must_pass": true,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.162,
+          "latency_ms": 1835,
+          "total_tokens": 7245,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.167,
+          "latency_ms": 1988,
+          "total_tokens": 7848,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-02",
+      "title": "Synthetic prediction contract case 02",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "must-pass"
+      ],
+      "must_pass": true,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.164,
+          "latency_ms": 1870,
+          "total_tokens": 7290,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.169,
+          "latency_ms": 2026,
+          "total_tokens": 7896,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-03",
+      "title": "Synthetic prediction contract case 03",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "must-pass"
+      ],
+      "must_pass": true,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.166,
+          "latency_ms": 1905,
+          "total_tokens": 7335,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.171,
+          "latency_ms": 2064,
+          "total_tokens": 7944,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-04",
+      "title": "Synthetic prediction contract case 04",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "must-pass"
+      ],
+      "must_pass": true,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.168,
+          "latency_ms": 1940,
+          "total_tokens": 7380,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.173,
+          "latency_ms": 2102,
+          "total_tokens": 7992,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-05",
+      "title": "Synthetic prediction contract case 05",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "must-pass"
+      ],
+      "must_pass": true,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.17,
+          "latency_ms": 1975,
+          "total_tokens": 7425,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.175,
+          "latency_ms": 2140,
+          "total_tokens": 8040,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-06",
+      "title": "Synthetic prediction contract case 06",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.172,
+          "latency_ms": 2010,
+          "total_tokens": 7470,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.177,
+          "latency_ms": 2178,
+          "total_tokens": 8088,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-07",
+      "title": "Synthetic prediction contract case 07",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.174,
+          "latency_ms": 2045,
+          "total_tokens": 7515,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.179,
+          "latency_ms": 2216,
+          "total_tokens": 8136,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-08",
+      "title": "Synthetic prediction contract case 08",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.176,
+          "latency_ms": 2080,
+          "total_tokens": 7560,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.181,
+          "latency_ms": 2254,
+          "total_tokens": 8184,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-09",
+      "title": "Synthetic prediction contract case 09",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.178,
+          "latency_ms": 2115,
+          "total_tokens": 7605,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.183,
+          "latency_ms": 2292,
+          "total_tokens": 8232,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-10",
+      "title": "Synthetic prediction contract case 10",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.18,
+          "latency_ms": 2150,
+          "total_tokens": 7650,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.185,
+          "latency_ms": 2330,
+          "total_tokens": 8280,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-11",
+      "title": "Synthetic prediction contract case 11",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.182,
+          "latency_ms": 2185,
+          "total_tokens": 7695,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.187,
+          "latency_ms": 2368,
+          "total_tokens": 8328,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-12",
+      "title": "Synthetic prediction contract case 12",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.184,
+          "latency_ms": 2220,
+          "total_tokens": 7740,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.189,
+          "latency_ms": 2406,
+          "total_tokens": 8376,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-13",
+      "title": "Synthetic prediction contract case 13",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.186,
+          "latency_ms": 2255,
+          "total_tokens": 7785,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.191,
+          "latency_ms": 2444,
+          "total_tokens": 8424,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-prediction-14",
+      "title": "Synthetic prediction contract case 14",
+      "workflow_kind": "prediction",
+      "tags": [
+        "synthetic",
+        "prediction",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "freeze_snapshot",
+        "macro_policy_agent",
+        "market_news_agent",
+        "ai_storage_industry_agent",
+        "strategy_agent",
+        "risk_critic_agent",
+        "evidence_validator",
+        "cio_agent"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.188,
+          "latency_ms": 2290,
+          "total_tokens": 7830,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "freeze_snapshot",
+            "macro_policy_agent",
+            "market_news_agent",
+            "ai_storage_industry_agent",
+            "strategy_agent",
+            "risk_critic_agent",
+            "evidence_validator",
+            "cio_agent"
+          ],
+          "hard_gates": {
+            "snapshot_sealed": true,
+            "evidence_cutoff_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.193,
+          "latency_ms": 2482,
+          "total_tokens": 8472,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-reflection-15",
+      "title": "Synthetic reflection contract case 15",
+      "workflow_kind": "reflection",
+      "tags": [
+        "synthetic",
+        "reflection",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "prepare",
+        "source_discovery",
+        "freeze_sources",
+        "analysis",
+        "finalize"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.19,
+          "latency_ms": 2325,
+          "total_tokens": 7875,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.195,
+          "latency_ms": 2520,
+          "total_tokens": 8520,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-reflection-16",
+      "title": "Synthetic reflection contract case 16",
+      "workflow_kind": "reflection",
+      "tags": [
+        "synthetic",
+        "reflection",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "prepare",
+        "source_discovery",
+        "freeze_sources",
+        "analysis",
+        "finalize"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.192,
+          "latency_ms": 2360,
+          "total_tokens": 7920,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.197,
+          "latency_ms": 2558,
+          "total_tokens": 8568,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-reflection-17",
+      "title": "Synthetic reflection contract case 17",
+      "workflow_kind": "reflection",
+      "tags": [
+        "synthetic",
+        "reflection",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "prepare",
+        "source_discovery",
+        "freeze_sources",
+        "analysis",
+        "finalize"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.194,
+          "latency_ms": 2395,
+          "total_tokens": 7965,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.199,
+          "latency_ms": 2596,
+          "total_tokens": 8616,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-reflection-18",
+      "title": "Synthetic reflection contract case 18",
+      "workflow_kind": "reflection",
+      "tags": [
+        "synthetic",
+        "reflection",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "prepare",
+        "source_discovery",
+        "freeze_sources",
+        "analysis",
+        "finalize"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.196,
+          "latency_ms": 2430,
+          "total_tokens": 8010,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.201,
+          "latency_ms": 2634,
+          "total_tokens": 8664,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-reflection-19",
+      "title": "Synthetic reflection contract case 19",
+      "workflow_kind": "reflection",
+      "tags": [
+        "synthetic",
+        "reflection",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "prepare",
+        "source_discovery",
+        "freeze_sources",
+        "analysis",
+        "finalize"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.198,
+          "latency_ms": 2465,
+          "total_tokens": 8055,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": true,
+          "brier": 0.203,
+          "latency_ms": 2672,
+          "total_tokens": 8712,
+          "qualitative_score": 0.84
+        }
+      }
+    },
+    {
+      "case_id": "synthetic-reflection-20",
+      "title": "Synthetic reflection contract case 20",
+      "workflow_kind": "reflection",
+      "tags": [
+        "synthetic",
+        "reflection",
+        "regression"
+      ],
+      "must_pass": false,
+      "expected_trajectory": [
+        "prepare",
+        "source_discovery",
+        "freeze_sources",
+        "analysis",
+        "finalize"
+      ],
+      "arm_outputs": {
+        "baseline-v1": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.2,
+          "latency_ms": 2500,
+          "total_tokens": 8100,
+          "qualitative_score": 0.8
+        },
+        "candidate-v2": {
+          "status": "completed",
+          "trajectory": [
+            "prepare",
+            "source_discovery",
+            "freeze_sources",
+            "analysis",
+            "finalize"
+          ],
+          "hard_gates": {
+            "evaluation_set_sealed": true,
+            "source_timeline_valid": true,
+            "schema_valid": true
+          },
+          "direction_correct": false,
+          "brier": 0.205,
+          "latency_ms": 2710,
+          "total_tokens": 8760,
+          "qualitative_score": 0.84
+        }
+      }
+    }
+  ],
+  "release_policy": {
+    "version": "1.0.0",
+    "min_metric_cases": 20,
+    "must_pass_rate": 1,
+    "max_brier_delta": 0.01,
+    "max_direction_drop": 0.02,
+    "max_p95_latency_ratio": 1.2,
+    "max_token_ratio": 1.15
+  }
+}

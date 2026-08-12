@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -35,12 +36,10 @@ class WorkflowRun(Base):
             "as_of",
             unique=True,
             sqlite_where=text(
-                "mode = 'live' AND status IN "
-                "('awaiting_draft', 'queued', 'running', 'completed')"
+                "mode = 'live' AND status IN ('awaiting_draft', 'queued', 'running', 'completed')"
             ),
             postgresql_where=text(
-                "mode = 'live' AND status IN "
-                "('awaiting_draft', 'queued', 'running', 'completed')"
+                "mode = 'live' AND status IN ('awaiting_draft', 'queued', 'running', 'completed')"
             ),
         ),
     )
@@ -71,6 +70,9 @@ class WorkflowRun(Base):
     forecasts: Mapped[list[Forecast]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
+    user_judgment_targets: Mapped[list[UserJudgmentTarget]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
     task: Mapped[WorkflowTask | None] = relationship(
         back_populates="run",
         cascade="all, delete-orphan",
@@ -90,8 +92,7 @@ class WorkflowTask(Base):
             name="ck_workflow_task_status",
         ),
         CheckConstraint(
-            "attempt_count >= 0 AND max_attempts >= 1 "
-            "AND attempt_count <= max_attempts",
+            "attempt_count >= 0 AND max_attempts >= 1 AND attempt_count <= max_attempts",
             name="ck_workflow_task_attempts",
         ),
         CheckConstraint(
@@ -328,6 +329,51 @@ class Forecast(Base):
     )
 
 
+class UserJudgmentTarget(Base):
+    """Immutable blind target published as soon as a run is prepared."""
+
+    __tablename__ = "user_judgment_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "index_code",
+            "horizon",
+            name="uq_user_judgment_target_identity",
+        ),
+        CheckConstraint(
+            "mode IN ('demo', 'live')",
+            name="ck_user_judgment_target_mode",
+        ),
+        CheckConstraint(
+            "opens_at < locks_at",
+            name="ck_user_judgment_target_window",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(String(24), index=True)
+    index_code: Mapped[str] = mapped_column(String(24), index=True)
+    index_name: Mapped[str] = mapped_column(String(64))
+    horizon: Mapped[str] = mapped_column(String(8), index=True)
+    base_trade_date: Mapped[date] = mapped_column(Date, index=True)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    data_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    opens_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    locks_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    run_input_hash: Mapped[str] = mapped_column(String(64))
+    market_universe_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    run: Mapped[WorkflowRun] = relationship(back_populates="user_judgment_targets")
+    judgments: Mapped[list[UserJudgment]] = relationship(back_populates="target")
+
+
 class EvaluationResult(Base):
     __tablename__ = "evaluation_results"
 
@@ -353,8 +399,409 @@ class EvaluationResult(Base):
     forecast: Mapped[Forecast] = relationship(back_populates="evaluation")
 
 
+class ResearchRunV2(Base):
+    """One focused v2 research run without reinterpreting a legacy workflow run."""
+
+    __tablename__ = "research_runs_v2"
+    __table_args__ = (
+        UniqueConstraint("input_hash", name="uq_research_run_v2_input_hash"),
+        CheckConstraint(
+            "status IN ('awaiting_draft', 'completed', 'failed')",
+            name="ck_research_run_v2_status",
+        ),
+        CheckConstraint("mode IN ('demo', 'live')", name="ck_research_run_v2_mode"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(64))
+    program_hash: Mapped[str] = mapped_column(String(64), index=True)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), index=True)
+    input_hash: Mapped[str] = mapped_column(String(64), index=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    mode: Mapped[str] = mapped_column(String(24), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    anchor_date: Mapped[date] = mapped_column(Date, index=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    data_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    prepared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    program: Mapped[dict[str, Any]] = mapped_column(JSON)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSON)
+    receipt: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    signals: Mapped[list[AgentSignalV2Record]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+    forecasts: Mapped[list[ForecastV2]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class AgentSignalV2Record(Base):
+    """Append-only v2 Agent signal with explicit natural and decision horizons."""
+
+    __tablename__ = "agent_signals_v2"
+    __table_args__ = (
+        UniqueConstraint("content_hash", name="uq_agent_signal_v2_content_hash"),
+        UniqueConstraint(
+            "run_id",
+            "agent_id",
+            "target_id",
+            "signal_kind",
+            name="uq_agent_signal_v2_run_identity",
+        ),
+        CheckConstraint(
+            "signal_kind IN ('natural_view', 'd1_impact', 'strategy_forecast', "
+            "'risk_critique', 'decision_forecast')",
+            name="ck_agent_signal_v2_kind",
+        ),
+        CheckConstraint(
+            "natural_horizon IN ('D1', 'W1', 'D20')",
+            name="ck_agent_signal_v2_natural_horizon",
+        ),
+        CheckConstraint(
+            "decision_horizon IS NULL OR decision_horizon IN ('D1', 'W1', 'D20')",
+            name="ck_agent_signal_v2_decision_horizon",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("research_runs_v2.id", ondelete="CASCADE"), index=True
+    )
+    schema_version: Mapped[str] = mapped_column(String(64))
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_version: Mapped[str] = mapped_column(String(32), index=True)
+    model_name: Mapped[str] = mapped_column(String(160), index=True)
+    prompt_version: Mapped[str] = mapped_column(String(80))
+    target_id: Mapped[str] = mapped_column(String(120), index=True)
+    signal_kind: Mapped[str] = mapped_column(String(32), index=True)
+    natural_horizon: Mapped[str] = mapped_column(String(8), index=True)
+    decision_horizon: Mapped[str | None] = mapped_column(String(8), nullable=True, index=True)
+    anchor_date: Mapped[date] = mapped_column(Date, index=True)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    evidence_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    program_hash: Mapped[str] = mapped_column(String(64), index=True)
+    input_hash: Mapped[str] = mapped_column(String(64), index=True)
+    threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+    baseline_probabilities: Mapped[dict[str, float] | None] = mapped_column(JSON, nullable=True)
+    state_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    abstain: Mapped[bool] = mapped_column(Boolean, default=False)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    envelope: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    run: Mapped[ResearchRunV2] = relationship(back_populates="signals")
+    evaluations: Mapped[list[SignalEvaluationV2]] = relationship(
+        back_populates="signal",
+        cascade="all, delete-orphan",
+    )
+    reasoning_reviews: Mapped[list[ReasoningReviewV2]] = relationship(
+        back_populates="signal",
+        cascade="all, delete-orphan",
+    )
+
+
+class ForecastV2(Base):
+    """Append-only v2 decision forecast for one explicit target."""
+
+    __tablename__ = "forecasts_v2"
+    __table_args__ = (
+        UniqueConstraint("run_id", "target_id", name="uq_forecast_v2_run_target"),
+        UniqueConstraint("content_hash", name="uq_forecast_v2_content_hash"),
+        CheckConstraint("horizon IN ('D1', 'W1')", name="ck_forecast_v2_horizon"),
+        CheckConstraint(
+            "configured_lane IN ('formal', 'shadow')",
+            name="ck_forecast_v2_configured_lane",
+        ),
+        CheckConstraint(
+            "effective_lane IN ('formal', 'shadow')",
+            name="ck_forecast_v2_effective_lane",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("research_runs_v2.id", ondelete="CASCADE"), index=True
+    )
+    source_signal_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_signals_v2.id"), unique=True, index=True
+    )
+    schema_version: Mapped[str] = mapped_column(String(64))
+    program_hash: Mapped[str] = mapped_column(String(64), index=True)
+    target_id: Mapped[str] = mapped_column(String(120), index=True)
+    horizon: Mapped[str] = mapped_column(String(8), index=True)
+    configured_lane: Mapped[str] = mapped_column(String(16), index=True)
+    effective_lane: Mapped[str] = mapped_column(String(16), index=True)
+    anchor_date: Mapped[date] = mapped_column(Date, index=True)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    probability_up: Mapped[float] = mapped_column(Float)
+    probability_neutral: Mapped[float] = mapped_column(Float)
+    probability_down: Mapped[float] = mapped_column(Float)
+    threshold: Mapped[float] = mapped_column(Float)
+    baseline_probabilities: Mapped[dict[str, float]] = mapped_column(JSON)
+    rationale: Mapped[str] = mapped_column(Text)
+    counter_evidence: Mapped[list[str]] = mapped_column(JSON, default=list)
+    invalidation_conditions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    input_hash: Mapped[str] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    run: Mapped[ResearchRunV2] = relationship(back_populates="forecasts")
+    source_signal: Mapped[AgentSignalV2Record] = relationship()
+    evaluation: Mapped[ForecastEvaluationV2 | None] = relationship(
+        back_populates="forecast",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    reflection: Mapped[ReflectionV2 | None] = relationship(
+        back_populates="forecast",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class OutcomeObservationV2Record(Base):
+    """Immutable, source-bound v2 market outcome shared by signal evaluations."""
+
+    __tablename__ = "outcome_observations_v2"
+    __table_args__ = (
+        UniqueConstraint("content_hash", name="uq_outcome_observation_v2_hash"),
+        UniqueConstraint(
+            "program_hash",
+            "target_id",
+            "anchor_date",
+            "target_date",
+            "mode",
+            name="uq_outcome_observation_v2_episode",
+        ),
+        CheckConstraint("mode IN ('demo', 'live')", name="ck_outcome_observation_v2_mode"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(64))
+    program_hash: Mapped[str] = mapped_column(String(64), index=True)
+    mode: Mapped[str] = mapped_column(String(24), index=True)
+    target_id: Mapped[str] = mapped_column(String(120), index=True)
+    anchor_date: Mapped[date] = mapped_column(Date, index=True)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    actual_value: Mapped[float] = mapped_column(Float)
+    actual_label: Mapped[str] = mapped_column(String(16), index=True)
+    threshold: Mapped[float] = mapped_column(Float)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    observation: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class SignalEvaluationV2(Base):
+    """Immutable outcome score for one probabilistic v2 signal."""
+
+    __tablename__ = "signal_evaluations_v2"
+    __table_args__ = (
+        UniqueConstraint("signal_id", name="uq_signal_evaluation_v2_signal"),
+        UniqueConstraint("content_hash", name="uq_signal_evaluation_v2_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    signal_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_signals_v2.id", ondelete="CASCADE"), index=True
+    )
+    observation_id: Mapped[str] = mapped_column(
+        ForeignKey("outcome_observations_v2.id"), index=True
+    )
+    actual_label: Mapped[str] = mapped_column(String(16), index=True)
+    brier_score: Mapped[float] = mapped_column(Float)
+    baseline_brier_score: Mapped[float] = mapped_column(Float)
+    direction_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    evaluator_version: Mapped[str] = mapped_column(String(32))
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+    signal: Mapped[AgentSignalV2Record] = relationship(back_populates="evaluations")
+    observation: Mapped[OutcomeObservationV2Record] = relationship()
+
+
+class ForecastEvaluationV2(Base):
+    """Immutable projection of the source decision signal evaluation."""
+
+    __tablename__ = "forecast_evaluations_v2"
+    __table_args__ = (
+        UniqueConstraint("forecast_id", name="uq_forecast_evaluation_v2_forecast"),
+        UniqueConstraint("content_hash", name="uq_forecast_evaluation_v2_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    forecast_id: Mapped[str] = mapped_column(
+        ForeignKey("forecasts_v2.id", ondelete="CASCADE"), index=True
+    )
+    signal_evaluation_id: Mapped[str] = mapped_column(
+        ForeignKey("signal_evaluations_v2.id"), unique=True, index=True
+    )
+    actual_value: Mapped[float] = mapped_column(Float)
+    actual_label: Mapped[str] = mapped_column(String(16), index=True)
+    brier_score: Mapped[float] = mapped_column(Float)
+    baseline_brier_score: Mapped[float] = mapped_column(Float)
+    direction_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+    forecast: Mapped[ForecastV2] = relationship(back_populates="evaluation")
+    signal_evaluation: Mapped[SignalEvaluationV2] = relationship()
+
+
+class ReasoningReviewV2(Base):
+    """Append-only pre-outcome review; human decisions live in separate events."""
+
+    __tablename__ = "reasoning_reviews_v2"
+    __table_args__ = (
+        UniqueConstraint("signal_id", name="uq_reasoning_review_v2_signal"),
+        UniqueConstraint("review_input_hash", name="uq_reasoning_review_v2_input"),
+        UniqueConstraint("content_hash", name="uq_reasoning_review_v2_hash"),
+        CheckConstraint(
+            "human_review_status IN ('not_required', 'pending', 'approved', 'rejected')",
+            name="ck_reasoning_review_v2_human_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    signal_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_signals_v2.id", ondelete="CASCADE"), index=True
+    )
+    schema_version: Mapped[str] = mapped_column(String(64))
+    review_input_hash: Mapped[str] = mapped_column(String(64), index=True)
+    deterministic_checks: Mapped[dict[str, bool]] = mapped_column(JSON)
+    rubric: Mapped[dict[str, Any]] = mapped_column(JSON)
+    total_score: Mapped[int] = mapped_column(Integer)
+    human_review_required: Mapped[bool] = mapped_column(Boolean, index=True)
+    human_review_status: Mapped[str] = mapped_column(String(24), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+    signal: Mapped[AgentSignalV2Record] = relationship(back_populates="reasoning_reviews")
+    human_events: Mapped[list[ReasoningReviewHumanEventV2]] = relationship(
+        back_populates="review",
+        cascade="all, delete-orphan",
+    )
+
+
+class ReasoningReviewHumanEventV2(Base):
+    """Append-only human decision; consumers derive effective status from it."""
+
+    __tablename__ = "reasoning_review_human_events_v2"
+    __table_args__ = (
+        UniqueConstraint("review_id", name="uq_reasoning_review_human_event_v2_review"),
+        UniqueConstraint("content_hash", name="uq_reasoning_review_human_event_v2_hash"),
+        CheckConstraint("decision IN ('approved', 'rejected')", name="ck_reasoning_human_decision"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_id: Mapped[str] = mapped_column(
+        ForeignKey("reasoning_reviews_v2.id", ondelete="CASCADE"), index=True
+    )
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    reviewer: Mapped[str] = mapped_column(String(120))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+    review: Mapped[ReasoningReviewV2] = relationship(back_populates="human_events")
+
+
+class ReflectionV2(Base):
+    """Target-scoped v2 reflection; no fixed five-index matrix is implied."""
+
+    __tablename__ = "reflections_v2"
+    __table_args__ = (
+        UniqueConstraint("forecast_id", name="uq_reflection_v2_forecast"),
+        UniqueConstraint("evaluation_id", name="uq_reflection_v2_evaluation"),
+        UniqueConstraint("content_hash", name="uq_reflection_v2_hash"),
+        CheckConstraint(
+            "status IN ('completed', 'failed')",
+            name="ck_reflection_v2_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    forecast_id: Mapped[str] = mapped_column(
+        ForeignKey("forecasts_v2.id", ondelete="CASCADE"), index=True
+    )
+    forecast_hash: Mapped[str] = mapped_column(String(64), index=True)
+    evaluation_id: Mapped[str] = mapped_column(
+        ForeignKey("forecast_evaluations_v2.id"), index=True
+    )
+    evaluation_hash: Mapped[str] = mapped_column(String(64), index=True)
+    schema_version: Mapped[str] = mapped_column(String(64))
+    target_id: Mapped[str] = mapped_column(String(120), index=True)
+    anchor_date: Mapped[date] = mapped_column(Date, index=True)
+    target_date: Mapped[date] = mapped_column(Date, index=True)
+    actual_label: Mapped[str] = mapped_column(String(16), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    verdict: Mapped[str] = mapped_column(String(64))
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    envelope: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+    forecast: Mapped[ForecastV2] = relationship(back_populates="reflection")
+    review_events: Mapped[list[ReflectionReviewEventV2]] = relationship(
+        back_populates="reflection",
+        cascade="all, delete-orphan",
+    )
+
+
+class ReflectionReviewEventV2(Base):
+    """Append-only approval used by the v2 activation gate."""
+
+    __tablename__ = "reflection_review_events_v2"
+    __table_args__ = (
+        UniqueConstraint("reflection_id", name="uq_reflection_review_event_v2_reflection"),
+        UniqueConstraint("content_hash", name="uq_reflection_review_event_v2_hash"),
+        CheckConstraint(
+            "decision IN ('approved', 'rejected')",
+            name="ck_reflection_review_v2_decision",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    reflection_id: Mapped[str] = mapped_column(
+        ForeignKey("reflections_v2.id", ondelete="CASCADE"), index=True
+    )
+    decision: Mapped[str] = mapped_column(String(16), index=True)
+    reviewer: Mapped[str] = mapped_column(String(120))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+    reflection: Mapped[ReflectionV2] = relationship(back_populates="review_events")
+
+
+class ResearchActivationEventV2(Base):
+    """Append-only activation event; absence means every v2 target remains shadow."""
+
+    __tablename__ = "research_activation_events_v2"
+    __table_args__ = (
+        UniqueConstraint("content_hash", name="uq_research_activation_v2_hash"),
+        CheckConstraint("event_type IN ('activated', 'retired')", name="ck_activation_v2_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String(64))
+    program_hash: Mapped[str] = mapped_column(String(64), index=True)
+    target_id: Mapped[str] = mapped_column(String(120), index=True)
+    event_type: Mapped[str] = mapped_column(String(16), index=True)
+    policy_version: Mapped[str] = mapped_column(String(32))
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON)
+    actor: Mapped[str] = mapped_column(String(120))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+
 class UserJudgment(Base):
-    """One immutable human judgment bound to a completed committee forecast."""
+    """One immutable revision of a human judgment."""
 
     __tablename__ = "user_judgments"
     __table_args__ = (
@@ -362,6 +809,17 @@ class UserJudgment(Base):
             "actor_id",
             "forecast_id",
             name="uq_user_judgment_actor_forecast",
+        ),
+        UniqueConstraint(
+            "actor_id",
+            "target_id",
+            "revision_number",
+            name="uq_user_judgment_actor_target_revision",
+        ),
+        CheckConstraint(
+            "(target_id IS NULL AND revision_number = 1) OR "
+            "(target_id IS NOT NULL AND revision_number >= 1)",
+            name="ck_user_judgment_revision_binding",
         ),
         CheckConstraint(
             "direction IN ('up', 'down')",
@@ -405,7 +863,17 @@ class UserJudgment(Base):
         nullable=True,
         index=True,
     )
-    forecast_id: Mapped[str] = mapped_column(ForeignKey("forecasts.id"), index=True)
+    forecast_id: Mapped[str | None] = mapped_column(
+        ForeignKey("forecasts.id"), nullable=True, index=True
+    )
+    target_id: Mapped[str | None] = mapped_column(
+        ForeignKey("user_judgment_targets.id"), nullable=True, index=True
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, default=1)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        ForeignKey("user_judgments.id"), nullable=True, index=True
+    )
+    target_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
     mode: Mapped[str] = mapped_column(String(24), index=True)
     index_code: Mapped[str] = mapped_column(String(24), index=True)
@@ -424,13 +892,21 @@ class UserJudgment(Base):
     )
     formal_score_eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     run_input_hash: Mapped[str] = mapped_column(String(64))
-    forecast_input_hash: Mapped[str] = mapped_column(String(64))
+    forecast_input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     policy_version: Mapped[str] = mapped_column(String(32))
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     wiki_path: Mapped[str] = mapped_column(Text)
     wiki_artifact_hash: Mapped[str] = mapped_column(String(64))
 
-    forecast: Mapped[Forecast] = relationship(back_populates="user_judgments")
+    forecast: Mapped[Forecast | None] = relationship(back_populates="user_judgments")
+    target: Mapped[UserJudgmentTarget | None] = relationship(
+        back_populates="judgments",
+        foreign_keys=[target_id],
+    )
+    supersedes: Mapped[UserJudgment | None] = relationship(
+        remote_side=[id],
+        foreign_keys=[supersedes_id],
+    )
     agent_spec_record: Mapped[AgentSpecRecord | None] = relationship(lazy="joined")
     evaluation: Mapped[UserJudgmentEvaluation | None] = relationship(
         back_populates="judgment",
@@ -520,9 +996,7 @@ class EvaluationBatch(Base):
     source_hash: Mapped[str] = mapped_column(String(64))
     data_quality: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     market_snapshots: Mapped[list[MarketSessionSnapshot]] = relationship(
@@ -561,9 +1035,7 @@ class MarketSessionSnapshot(Base):
     breadth_down_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     sector_contributions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     weight_contributions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    historical_abs_return_percentile: Mapped[float | None] = mapped_column(
-        Float, nullable=True
-    )
+    historical_abs_return_percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
     history_sample_size: Mapped[int] = mapped_column(Integer, default=0)
     source_url: Mapped[str] = mapped_column(Text)
     source_hash: Mapped[str] = mapped_column(String(64))
@@ -587,9 +1059,7 @@ class OpinionEvaluation(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     batch_id: Mapped[str] = mapped_column(ForeignKey("evaluation_batches.id"), index=True)
-    agent_opinion_id: Mapped[str] = mapped_column(
-        ForeignKey("agent_opinions.id"), index=True
-    )
+    agent_opinion_id: Mapped[str] = mapped_column(ForeignKey("agent_opinions.id"), index=True)
     evaluation_result_id: Mapped[str] = mapped_column(
         ForeignKey("evaluation_results.id"), index=True
     )
@@ -625,9 +1095,7 @@ class ForecastDiagnostic(Base):
     signed_sigma: Mapped[float] = mapped_column(Float)
     severity: Mapped[str] = mapped_column(String(24), index=True)
     systemic_extreme_down: Mapped[bool] = mapped_column(Boolean, default=False)
-    historical_abs_return_percentile: Mapped[float | None] = mapped_column(
-        Float, nullable=True
-    )
+    historical_abs_return_percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
     history_sample_size: Mapped[int] = mapped_column(Integer, default=0)
     data_incomplete: Mapped[bool] = mapped_column(Boolean, default=False)
     sign_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
@@ -677,9 +1145,7 @@ class ReflectionRun(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     source_run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
-    source_batch_id: Mapped[str] = mapped_column(
-        ForeignKey("evaluation_batches.id"), index=True
-    )
+    source_batch_id: Mapped[str] = mapped_column(ForeignKey("evaluation_batches.id"), index=True)
     horizon: Mapped[str] = mapped_column(String(8), index=True)
     target_date: Mapped[date] = mapped_column(Date, index=True)
     schema_version: Mapped[str] = mapped_column(String(32), default="1.0.0")
@@ -689,9 +1155,7 @@ class ReflectionRun(Base):
         ForeignKey("reflection_runs.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_hash: Mapped[str] = mapped_column(String(64))
     source_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -749,9 +1213,7 @@ class ReflectionFinding(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    reflection_run_id: Mapped[str] = mapped_column(
-        ForeignKey("reflection_runs.id"), index=True
-    )
+    reflection_run_id: Mapped[str] = mapped_column(ForeignKey("reflection_runs.id"), index=True)
     scope_type: Mapped[str] = mapped_column(String(24), index=True)
     subject_id: Mapped[str] = mapped_column(String(64), index=True)
     index_code: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
@@ -819,9 +1281,7 @@ class LessonProposal(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    reflection_run_id: Mapped[str] = mapped_column(
-        ForeignKey("reflection_runs.id"), index=True
-    )
+    reflection_run_id: Mapped[str] = mapped_column(ForeignKey("reflection_runs.id"), index=True)
     episode_key: Mapped[str] = mapped_column(String(120), index=True)
     cluster_key: Mapped[str] = mapped_column(String(240), index=True)
     title: Mapped[str] = mapped_column(String(200))
@@ -834,9 +1294,7 @@ class LessonProposal(Base):
     replay_metrics: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     half_life_sessions: Mapped[int] = mapped_column(Integer, default=60)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    reviewed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     supersedes_id: Mapped[str | None] = mapped_column(
         ForeignKey("lesson_proposals.id"), nullable=True
     )
@@ -845,9 +1303,7 @@ class LessonProposal(Base):
     supersedes: Mapped[LessonProposal | None] = relationship(
         remote_side="LessonProposal.id", uselist=False
     )
-    replay_batches: Mapped[list[LessonReplayBatch]] = relationship(
-        back_populates="lesson_proposal"
-    )
+    replay_batches: Mapped[list[LessonReplayBatch]] = relationship(back_populates="lesson_proposal")
     lifecycle_events: Mapped[list[LessonLifecycleEvent]] = relationship(
         back_populates="lesson_proposal"
     )
@@ -890,9 +1346,7 @@ class LessonReplayBatch(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    lesson_proposal_id: Mapped[str] = mapped_column(
-        ForeignKey("lesson_proposals.id"), index=True
-    )
+    lesson_proposal_id: Mapped[str] = mapped_column(ForeignKey("lesson_proposals.id"), index=True)
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     manifest: Mapped[dict[str, Any]] = mapped_column(JSON)
     observations: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
@@ -902,9 +1356,7 @@ class LessonReplayBatch(Base):
     submitted_by: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
-    lesson_proposal: Mapped[LessonProposal] = relationship(
-        back_populates="replay_batches"
-    )
+    lesson_proposal: Mapped[LessonProposal] = relationship(back_populates="replay_batches")
 
 
 class LessonLifecycleEvent(Base):
@@ -929,21 +1381,17 @@ class LessonLifecycleEvent(Base):
             name="ck_lesson_lifecycle_event_type",
         ),
         CheckConstraint(
-            "from_status IN "
-            "('candidate', 'active', 'challenged', 'retired', 'superseded')",
+            "from_status IN ('candidate', 'active', 'challenged', 'retired', 'superseded')",
             name="ck_lesson_lifecycle_event_from_status",
         ),
         CheckConstraint(
-            "to_status IN "
-            "('candidate', 'active', 'challenged', 'retired', 'superseded')",
+            "to_status IN ('candidate', 'active', 'challenged', 'retired', 'superseded')",
             name="ck_lesson_lifecycle_event_to_status",
         ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    lesson_proposal_id: Mapped[str] = mapped_column(
-        ForeignKey("lesson_proposals.id"), index=True
-    )
+    lesson_proposal_id: Mapped[str] = mapped_column(ForeignKey("lesson_proposals.id"), index=True)
     sequence_number: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(32), index=True)
     event_key: Mapped[str] = mapped_column(String(160))
@@ -956,6 +1404,342 @@ class LessonLifecycleEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     occurred_at_canonical: Mapped[str] = mapped_column(String(40))
 
-    lesson_proposal: Mapped[LessonProposal] = relationship(
-        back_populates="lifecycle_events"
+    lesson_proposal: Mapped[LessonProposal] = relationship(back_populates="lifecycle_events")
+
+
+class AgentTrace(Base):
+    """One private, non-authoritative execution attempt for a workflow subject."""
+
+    __tablename__ = "agent_traces"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_kind",
+            "subject_id",
+            "attempt_number",
+            name="uq_agent_trace_attempt",
+        ),
+        CheckConstraint(
+            "workflow_kind IN ('prediction', 'reflection', 'agent_eval')",
+            name="ck_agent_trace_workflow_kind",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed', 'degraded')",
+            name="ck_agent_trace_status",
+        ),
+        CheckConstraint("attempt_number >= 1", name="ck_agent_trace_attempt_number"),
     )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workflow_kind: Mapped[str] = mapped_column(String(24), index=True)
+    subject_id: Mapped[str] = mapped_column(String(64), index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1)
+    target_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    horizon: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    mode: Mapped[str] = mapped_column(String(24), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    trace_policy_version: Mapped[str] = mapped_column(String(32), default="1.0.0")
+    telemetry_complete: Mapped[bool] = mapped_column(Boolean, default=True)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    spans: Mapped[list[AgentTraceSpan]] = relationship(
+        back_populates="trace", cascade="all, delete-orphan"
+    )
+    artifact_links: Mapped[list[AgentTraceArtifactLink]] = relationship(
+        back_populates="trace", cascade="all, delete-orphan"
+    )
+
+
+class AgentTraceSpan(Base):
+    """One sanitized workflow, agent, model, validator, or persistence span."""
+
+    __tablename__ = "agent_trace_spans"
+    __table_args__ = (
+        UniqueConstraint("trace_id", "span_id", name="uq_agent_trace_span_identity"),
+        ForeignKeyConstraint(
+            ["trace_id", "parent_span_id"],
+            ["agent_trace_spans.trace_id", "agent_trace_spans.span_id"],
+            name="fk_agent_trace_span_parent",
+        ),
+        CheckConstraint(
+            "span_kind IN ('workflow', 'agent', 'llm', 'validator', 'persistence', 'external')",
+            name="ck_agent_trace_span_kind",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed')",
+            name="ck_agent_trace_span_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_traces.id", ondelete="CASCADE"), index=True
+    )
+    span_id: Mapped[str] = mapped_column(String(16), index=True)
+    parent_span_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    node_id: Mapped[str] = mapped_column(String(120), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    span_kind: Mapped[str] = mapped_column(String(24), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    agent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    agent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    input_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    output_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    trace: Mapped[AgentTrace] = relationship(back_populates="spans")
+
+
+class AgentTraceArtifactLink(Base):
+    """Append-only identity link from a trace or span to an audited artifact."""
+
+    __tablename__ = "agent_trace_artifact_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "trace_id",
+            "span_id",
+            "artifact_kind",
+            "artifact_id",
+            "relation",
+            name="uq_agent_trace_artifact_link",
+        ),
+        ForeignKeyConstraint(
+            ["trace_id", "span_id"],
+            ["agent_trace_spans.trace_id", "agent_trace_spans.span_id"],
+            name="fk_agent_trace_artifact_link_span",
+        ),
+        CheckConstraint(
+            "artifact_kind IN ('signal', 'forecast', 'evaluation', 'reasoning_review', "
+            "'reflection', 'bad_case')",
+            name="ck_agent_trace_artifact_kind",
+        ),
+        CheckConstraint(
+            "relation IN ('input', 'output', 'reused', 'diagnostic')",
+            name="ck_agent_trace_artifact_relation",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_traces.id", ondelete="CASCADE"), index=True
+    )
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    artifact_kind: Mapped[str] = mapped_column(String(32), index=True)
+    artifact_id: Mapped[str] = mapped_column(String(160), index=True)
+    relation: Mapped[str] = mapped_column(String(24), index=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    trace: Mapped[AgentTrace] = relationship(back_populates="artifact_links")
+
+
+class AgentEvalExperiment(Base):
+    """One immutable-suite comparison between a baseline and candidate target."""
+
+    __tablename__ = "agent_eval_experiments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed')",
+            name="ck_agent_eval_experiment_status",
+        ),
+        CheckConstraint(
+            "release_decision IN ('pending', 'pass', 'fail', 'insufficient_sample')",
+            name="ck_agent_eval_release_decision",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    suite_id: Mapped[str] = mapped_column(String(120), index=True)
+    suite_version: Mapped[str] = mapped_column(String(32))
+    suite_hash: Mapped[str] = mapped_column(String(64), index=True)
+    baseline_target_id: Mapped[str] = mapped_column(String(120))
+    baseline_target_hash: Mapped[str] = mapped_column(String(64))
+    candidate_target_id: Mapped[str] = mapped_column(String(120))
+    candidate_target_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    release_decision: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    policy_version: Mapped[str] = mapped_column(String(32), default="1.0.0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    report_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    task: Mapped[AgentEvalTask | None] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan", uselist=False
+    )
+    results: Mapped[list[AgentEvalResult]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan"
+    )
+
+
+class AgentEvalTask(Base):
+    """Durable queue item for an offline Agent evaluation experiment."""
+
+    __tablename__ = "agent_eval_tasks"
+    __table_args__ = (
+        UniqueConstraint("experiment_id", name="uq_agent_eval_task_experiment"),
+        UniqueConstraint("idempotency_key", name="uq_agent_eval_task_idempotency"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'retry_wait', 'completed', 'failed')",
+            name="ck_agent_eval_task_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    experiment_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_eval_experiments.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=2)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+
+    experiment: Mapped[AgentEvalExperiment] = relationship(back_populates="task")
+
+
+class AgentEvalResult(Base):
+    """Per-case evaluator result for one experiment arm."""
+
+    __tablename__ = "agent_eval_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "experiment_id",
+            "arm",
+            "case_id",
+            "evaluator_id",
+            name="uq_agent_eval_result_identity",
+        ),
+        CheckConstraint("arm IN ('baseline', 'candidate')", name="ck_agent_eval_arm"),
+        CheckConstraint(
+            "status IN ('passed', 'failed', 'not_applicable', 'error')",
+            name="ck_agent_eval_result_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    experiment_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_eval_experiments.id", ondelete="CASCADE"), index=True
+    )
+    arm: Mapped[str] = mapped_column(String(16), index=True)
+    case_id: Mapped[str] = mapped_column(String(160), index=True)
+    evaluator_id: Mapped[str] = mapped_column(String(160), index=True)
+    evaluator_version: Mapped[str] = mapped_column(String(32))
+    metric_kind: Mapped[str] = mapped_column(String(64), index=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    explanation: Mapped[str] = mapped_column(Text, default="")
+    output_hash: Mapped[str] = mapped_column(String(64))
+    trace_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_traces.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    experiment: Mapped[AgentEvalExperiment] = relationship(back_populates="results")
+
+
+class AgentBadCase(Base):
+    """Mutable projection backed by append-only bad-case lifecycle events."""
+
+    __tablename__ = "agent_bad_cases"
+    __table_args__ = (
+        UniqueConstraint("dedupe_hash", name="uq_agent_bad_case_dedupe"),
+        CheckConstraint(
+            "status IN ('detected', 'triaged', 'confirmed', 'materialized', "
+            "'resolved', 'rejected')",
+            name="ck_agent_bad_case_status",
+        ),
+        CheckConstraint(
+            "severity IN ('low', 'medium', 'high', 'critical')",
+            name="ck_agent_bad_case_severity",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(ForeignKey("agent_traces.id"), index=True)
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    eval_result_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_eval_results.id"), nullable=True
+    )
+    workflow_kind: Mapped[str] = mapped_column(String(24), index=True)
+    issue_type: Mapped[str] = mapped_column(String(64), index=True)
+    severity: Mapped[str] = mapped_column(String(16), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    summary: Mapped[str] = mapped_column(Text)
+    expected_behavior: Mapped[str] = mapped_column(Text, default="")
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dedupe_hash: Mapped[str] = mapped_column(String(64))
+    dataset_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    dataset_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    events: Mapped[list[AgentBadCaseEvent]] = relationship(
+        back_populates="bad_case", cascade="all, delete-orphan"
+    )
+
+
+class AgentBadCaseEvent(Base):
+    """One immutable transition in the bad-case governance hash chain."""
+
+    __tablename__ = "agent_bad_case_events"
+    __table_args__ = (
+        UniqueConstraint("bad_case_id", "sequence_number", name="uq_bad_case_event_seq"),
+        UniqueConstraint("bad_case_id", "idempotency_key", name="uq_bad_case_event_key"),
+        CheckConstraint(
+            "event_type IN ('detected', 'triaged', 'confirmed', 'materialized', "
+            "'resolved', 'rejected')",
+            name="ck_agent_bad_case_event_type",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    bad_case_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_bad_cases.id", ondelete="CASCADE"), index=True
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(24), index=True)
+    from_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(24))
+    idempotency_key: Mapped[str] = mapped_column(String(160))
+    actor: Mapped[str] = mapped_column(String(120))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    bad_case: Mapped[AgentBadCase] = relationship(back_populates="events")

@@ -61,7 +61,10 @@ def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
 
 def _install_agent_contract_guards(connection) -> None:
     tables = {"agent_specs", "signal_envelopes"}
-    if not tables.issubset(inspect(connection).get_table_names()):
+    table_names = set(inspect(connection).get_table_names())
+    if not tables.issubset(table_names):
+        _install_trace_guards(connection, table_names)
+        _install_v2_research_guards(connection, table_names)
         return
     if connection.dialect.name == "sqlite":
         for table in sorted(tables):
@@ -76,6 +79,8 @@ def _install_agent_contract_guards(connection) -> None:
                         "END"
                     )
                 )
+        _install_trace_guards(connection, table_names)
+        _install_v2_research_guards(connection, table_names)
         return
     if connection.dialect.name == "postgresql":
         connection.execute(
@@ -101,3 +106,95 @@ def _install_agent_contract_guards(connection) -> None:
                     "forecast_loop_reject_agent_contract_mutation()"
                 )
             )
+        _install_trace_guards(connection, table_names)
+        _install_v2_research_guards(connection, table_names)
+
+
+def _install_trace_guards(connection, table_names: set[str]) -> None:
+    """Install retention/seal guards for create-all test databases.
+
+    Production databases receive equivalent guards from Alembic migration
+    ``0014_trace_attempts``.  Keeping this here makes the explicit test-only
+    metadata bootstrap exercise the same append-only boundary.
+    """
+
+    required = {
+        "agent_traces",
+        "agent_trace_spans",
+        "agent_trace_artifact_links",
+    }
+    if connection.dialect.name != "sqlite" or not required.issubset(table_names):
+        return
+    statements = (
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_traces_reject_sealed_update "
+        "BEFORE UPDATE ON agent_traces WHEN OLD.status != 'running' BEGIN "
+        "SELECT RAISE(ABORT, 'sealed Agent trace is immutable'); END",
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_traces_reject_delete "
+        "BEFORE DELETE ON agent_traces BEGIN "
+        "SELECT RAISE(ABORT, 'Agent traces are retained'); END",
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_trace_spans_reject_sealed_insert "
+        "BEFORE INSERT ON agent_trace_spans WHEN EXISTS "
+        "(SELECT 1 FROM agent_traces WHERE id = NEW.trace_id AND status != 'running') "
+        "BEGIN SELECT RAISE(ABORT, 'sealed Agent trace is immutable'); END",
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_trace_spans_reject_sealed_update "
+        "BEFORE UPDATE ON agent_trace_spans WHEN EXISTS "
+        "(SELECT 1 FROM agent_traces WHERE id = OLD.trace_id AND status != 'running') "
+        "BEGIN SELECT RAISE(ABORT, 'sealed Agent trace is immutable'); END",
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_trace_spans_reject_delete "
+        "BEFORE DELETE ON agent_trace_spans BEGIN "
+        "SELECT RAISE(ABORT, 'Agent trace spans are retained'); END",
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_trace_links_reject_sealed_insert "
+        "BEFORE INSERT ON agent_trace_artifact_links WHEN EXISTS "
+        "(SELECT 1 FROM agent_traces WHERE id = NEW.trace_id AND status != 'running') "
+        "BEGIN SELECT RAISE(ABORT, 'sealed Agent trace is immutable'); END",
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_trace_links_reject_update "
+        "BEFORE UPDATE ON agent_trace_artifact_links BEGIN "
+        "SELECT RAISE(ABORT, 'Agent trace artifact links are immutable'); END",
+        "CREATE TRIGGER IF NOT EXISTS trg_agent_trace_links_reject_delete "
+        "BEFORE DELETE ON agent_trace_artifact_links BEGIN "
+        "SELECT RAISE(ABORT, 'Agent trace artifact links are retained'); END",
+    )
+    for statement in statements:
+        connection.execute(text(statement))
+
+
+def _install_v2_research_guards(connection, table_names: set[str]) -> None:
+    """Mirror migration 0015 retention rules in test-only create-all databases."""
+
+    append_only = {
+        "agent_signals_v2",
+        "forecasts_v2",
+        "outcome_observations_v2",
+        "signal_evaluations_v2",
+        "forecast_evaluations_v2",
+        "reasoning_reviews_v2",
+        "reasoning_review_human_events_v2",
+        "reflections_v2",
+        "reflection_review_events_v2",
+        "research_activation_events_v2",
+    }
+    if connection.dialect.name != "sqlite" or not append_only.issubset(table_names):
+        return
+    for table in sorted(append_only):
+        for operation in ("UPDATE", "DELETE"):
+            connection.execute(
+                text(
+                    f"CREATE TRIGGER IF NOT EXISTS trg_{table}_reject_{operation.lower()} "
+                    f"BEFORE {operation} ON {table} BEGIN "
+                    "SELECT RAISE(ABORT, 'immutable v2 research record'); END"
+                )
+            )
+    connection.execute(
+        text(
+            "CREATE TRIGGER IF NOT EXISTS trg_research_runs_v2_reject_delete "
+            "BEFORE DELETE ON research_runs_v2 BEGIN "
+            "SELECT RAISE(ABORT, 'v2 research runs are retained'); END"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE TRIGGER IF NOT EXISTS trg_research_runs_v2_reject_terminal_update "
+            "BEFORE UPDATE ON research_runs_v2 WHEN OLD.status != 'awaiting_draft' BEGIN "
+            "SELECT RAISE(ABORT, 'terminal v2 research run is immutable'); END"
+        )
+    )

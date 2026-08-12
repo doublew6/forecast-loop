@@ -9,6 +9,14 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Focused research v2 contracts and append-only workflows for one CSI 1000 D1
+  activation target, a W1 relative shadow target, and D20 natural-horizon state.
+- Outcome-blind Agent Eval v2 file replay with per-target release gates,
+  advisory reasoning reviews, diagnostic ablations, and bad-case feedback.
+- Attempt-level sanitized traces with artifact links, immutable terminal seals,
+  cursor pagination, filters, and storage monitoring.
+- Read-only v2 research, forecast, scorecard, reasoning-review, evaluation, and
+  trace views in the API and frontend.
 - Public-boundary checks for staged files, commit messages, complete reachable
   Git history, ref names, and release artifacts.
 - Repository-external private-boundary rules that never enter the public tree or
@@ -16,6 +24,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- The primary dashboard and scorecard views now separate formal D1 decisions,
+  W1 shadow research, natural-horizon views, reasoning quality, and incremental
+  contribution instead of presenting a cross-horizon overall ranking.
 - New forecast writes and the current Dashboard use D1 only. Handoff protocol
   v3 seals that contract, previously prepared v2 D1/D2 jobs remain finalizable,
   and historical D2 forecasts remain readable and evaluable.

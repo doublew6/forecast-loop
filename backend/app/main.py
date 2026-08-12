@@ -17,6 +17,7 @@ from .config import Settings, get_settings
 from .db import Database
 from .domain import RunStatus
 from .models import WorkflowRun
+from .services.agent_tracing import TraceRecorder
 from .services.schema_readiness import migration_config, require_schema_current
 from .services.seed import seed_demo_data
 from .services.task_queue import PersistentTaskQueue
@@ -48,10 +49,12 @@ def create_app(
                 require_schema_current(database.engine)
             _fail_interrupted_runs(database, timezone=resolved.timezone)
             wiki = WikiCatalog.from_settings(resolved)
+            trace_recorder = TraceRecorder(database, resolved)
             workflow = CommitteeWorkflow(
                 settings=resolved,
                 database=database,
                 wiki=wiki,
+                trace_recorder=trace_recorder,
             )
             task_queue = PersistentTaskQueue(
                 database,
@@ -66,6 +69,7 @@ def create_app(
             application.state.wiki = wiki
             application.state.workflow = workflow
             application.state.task_queue = task_queue
+            application.state.trace_recorder = trace_recorder
             if resolved.auto_seed and resolved.use_demo_provider:
                 seed_demo_data(workflow)
             yield

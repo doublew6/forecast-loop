@@ -1,12 +1,12 @@
-import { Activity, Award, BarChart3, HelpCircle, SearchCheck, Target } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Activity, BarChart3, BrainCircuit, GitCompareArrows, HelpCircle, SearchCheck, Target, Waypoints } from 'lucide-react'
+import { useMemo } from 'react'
 import { Link } from 'react-router'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { DemoBanner, EmptyState, LoadingPanel, PageHeading, SampleWarning } from '../components/Common'
-import { useScorecards } from '../lib/api'
+import { useAgentScorecardsV2, useReasoningReviewsV2, useScorecards } from '../lib/api'
 import { percent } from '../lib/format'
-import type { Horizon } from '../lib/types'
+import type { AgentScorecardAxisV2, AgentScorecardSectionV2 } from '../lib/types'
 
 const workflowRoleLabel = {
   research: 'Research',
@@ -23,9 +23,9 @@ const sourceTypeLabel = {
   deterministic: 'Rule',
 } as const
 
-export function Scorecards() {
+function LegacyScorecards() {
   const query = useScorecards()
-  const [horizon, setHorizon] = useState<Horizon>('D1')
+  const horizon = 'D1' as const
   const rows = useMemo(
     () => query.data?.data.filter((row) => row.horizon === horizon) ?? [],
     [query.data, horizon],
@@ -59,17 +59,10 @@ export function Scorecards() {
             <Link className="secondary-button" to="/reflections">
               <SearchCheck size={15} /> 查看每日反省
             </Link>
-            <div className="horizon-toggle">
-              {(['D1', 'D2'] as Horizon[]).map((item) => (
-                <button
-                  key={item}
-                  aria-pressed={horizon === item}
-                  onClick={() => setHorizon(item)}
-                  className={horizon === item ? 'active' : ''}
-                >
-                  {item}<span>{item === 'D1' ? '次日' : '两日'}</span>
-                </button>
-              ))}
+            <div className="horizon-identity compact" aria-label="成绩周期：下一交易日">
+              <span>成绩周期</span>
+              <strong>D1</strong>
+              <small>下一交易日</small>
             </div>
           </div>
         }
@@ -80,7 +73,7 @@ export function Scorecards() {
         <div className="metric-card featured"><div className="metric-icon"><Target size={19} /></div><span>投委会符号命中率</span><strong>{percent(committee?.sign_accuracy)}</strong><small>{committee?.sign_sample_size ? `${committee.sign_correct}/${committee.sign_sample_size} 命中` : '无正式 Live 样本'}</small></div>
         <div className="metric-card"><div className="metric-icon"><BarChart3 size={19} /></div><span>投委会重大行情命中率</span><strong>{percent(committee?.material_direction_accuracy)}</strong><small>{committee?.material_sample_size ? `${committee.material_correct}/${committee.material_sample_size} 命中 · 仅统计噪声带外` : '无噪声带外样本'}</small></div>
         <div className="metric-card"><div className="metric-icon"><Activity size={19} /></div><span>投委会三分类 Brier</span><strong>{committee?.brier?.toFixed(3) ?? '—'}</strong><small>{committee?.expected_calibration_error === null || committee?.expected_calibration_error === undefined ? '越低代表概率质量越好' : `ECE ${committee.expected_calibration_error.toFixed(3)}`}</small></div>
-        <div className="metric-card"><div className="metric-icon"><Award size={19} /></div><span>当前最佳角色</span><strong className="metric-name">{best?.agent_name ?? '等待样本'}</strong><small>{best ? `${percent(best.material_direction_accuracy ?? best.sign_accuracy)} 重大行情命中率` : '至少需要 20 个预测截面'}</small></div>
+        <div className="metric-card"><div className="metric-icon"><Waypoints size={19} /></div><span>可比较角色</span><strong>{comparable.length}</strong><small>{best ? `已有 ${comparable.length} 个角色达到样本门槛` : '至少需要 20 个预测截面'}</small></div>
       </section>
 
       <section className="scorecard-grid">
@@ -150,4 +143,146 @@ export function Scorecards() {
       </div>
     </div>
   )
+}
+
+const axisMeta: Array<{
+  axis: AgentScorecardAxisV2
+  title: string
+  description: string
+  icon: typeof Target
+}> = [
+  { axis: 'final_system', title: '最终系统', description: 'Strategy 与 CIO 的正式概率结果', icon: Target },
+  { axis: 'natural_horizon', title: '自然周期', description: 'D1、W1、D20 按各自周期评分', icon: Waypoints },
+  { axis: 'd1_impact', title: 'D1 边际影响', description: '结构、映射与弃权，不直接算 Brier', icon: Activity },
+  { axis: 'reasoning', title: '推理质量', description: '结构规则与结果揭晓前盲审', icon: BrainCircuit },
+  { axis: 'incremental_value', title: '增量贡献', description: '离线 ablation 诊断，不自动调权', icon: GitCompareArrows },
+]
+
+function axisKey(axis: string) {
+  const aliases: Record<string, AgentScorecardAxisV2> = {
+    outcome: 'final_system',
+    system: 'final_system',
+    natural: 'natural_horizon',
+    impact: 'd1_impact',
+    ablation: 'incremental_value',
+    incremental: 'incremental_value',
+  }
+  return aliases[axis] ?? axis
+}
+
+function score(value: number | null | undefined, digits = 3) {
+  return value === null || value === undefined ? '—' : value.toFixed(digits)
+}
+
+function classwiseEce(item: AgentScorecardSectionV2['items'][number]) {
+  if (!item.classwise_ece) return '—'
+  const values = Object.values(item.classwise_ece).filter((value): value is number => typeof value === 'number')
+  return values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(3) : '—'
+}
+
+function ScorecardAxisTable({ section }: { section: AgentScorecardSectionV2 }) {
+  if (!section.items.length) {
+    return <EmptyState title={`${section.title}暂无样本`} description="v2 只展示按目标、周期和 Agent 版本隔离后的独立 episode。" />
+  }
+  return (
+    <div className="table-scroll">
+      <table className="data-table v2-score-table">
+        <thead><tr><th>Agent / 信号</th><th>目标 / 周期</th><th>结果质量</th><th>推理</th><th>增量</th><th>独立样本</th></tr></thead>
+        <tbody>
+          {section.items.map((item) => (
+            <tr key={`${item.agent_id}:${item.agent_version}:${item.model_name}:${item.prompt_version}:${item.target_id}:${item.signal_kind}:${item.horizon}`}>
+              <td><div className="table-agent"><span>{item.agent_name.slice(0, 1)}</span><div><strong>{item.agent_name}</strong><small>{item.signal_kind}</small><small><code>{item.agent_id}</code></small><small>v{item.agent_version ?? '—'} · {item.model_name ?? 'unknown model'} · {item.prompt_version ?? 'unknown prompt'}</small></div></div></td>
+              <td><div className="sample-detail"><span>{item.horizon}</span><small>{item.target_id}</small></div></td>
+              <td><div className="sample-detail"><span>{item.risk_diagnostics ? `风险覆盖 ${percent(item.risk_diagnostics.counter_evidence_coverage_rate)}` : `Brier ${score(item.average_brier)}`}</span><small>{item.risk_diagnostics ? `失效条件 ${percent(item.risk_diagnostics.invalidation_coverage_rate)}` : `Skill ${percent(item.brier_skill, 1)} · classwise ECE avg ${classwiseEce(item)}`}</small></div></td>
+              <td><div className="sample-detail"><span>{item.reasoning_average === null ? '—' : `${item.reasoning_average.toFixed(1)} / 10`}</span><small>{item.risk_diagnostics ? `漏报 ${item.risk_diagnostics.missed_risk_count} / ${item.risk_diagnostics.evaluated_system_errors} 次系统错误` : `方向 ${percent(item.direction_accuracy)}`}</small></div></td>
+              <td><div className="sample-detail"><span>{item.ablation_brier_delta === null ? '—' : `${item.ablation_brier_delta >= 0 ? '+' : ''}${item.ablation_brier_delta.toFixed(4)}`}</span><small>去除 Agent 后 Brier Δ</small></div></td>
+              <td><div className="sample-detail"><span>{item.independent_episodes}</span><small>{item.note || `${item.sample_size} 条记录`}</small></div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function FocusedScorecards() {
+  const query = useAgentScorecardsV2()
+  const reviews = useReasoningReviewsV2()
+  if (query.isLoading) return <LoadingPanel />
+
+  const received = query.data?.sections ?? []
+  const sections = axisMeta.map((meta) => {
+    const source = received.find((section) => axisKey(section.axis) === meta.axis)
+    return { axis: meta.axis, title: meta.title, items: source?.items ?? [] }
+  })
+  const systemRows = sections[0].items
+  const cio = systemRows.find((item) => item.signal_kind === 'decision_forecast') ?? systemRows[0]
+  const reviewRows = reviews.data ?? []
+  const humanQueue = reviewRows.filter(
+    (item) => item.human_review_required && item.human_review_status === 'pending',
+  )
+
+  return (
+    <div className="page scorecard-page focused-scorecard-page">
+      <PageHeading
+        eyebrow="Agent Evidence · v2"
+        title="Agent 分轴成绩单"
+        description="结果能力、自然周期、D1 边际影响、推理质量和增量贡献各自回答不同问题；不跨周期合并，也不生成“最佳角色”总榜。"
+        actions={<Link className="secondary-button" to="/reflections"><SearchCheck size={15} />查看到期反省</Link>}
+      />
+      {query.isError && <div className="action-message error">v2 成绩数据不可用：{query.error.message}</div>}
+
+      <section className="v2-axis-overview" aria-label="五项 Agent 评价轴">
+        {axisMeta.map((meta, index) => {
+          const Icon = meta.icon
+          const count = sections[index].items.length
+          return (
+            <article key={meta.axis} className={meta.axis === 'final_system' ? 'featured' : ''}>
+              <Icon size={17} />
+              <span>{meta.title}</span>
+              <strong>{count}</strong>
+              <small>{meta.description}</small>
+            </article>
+          )
+        })}
+      </section>
+
+      <section className="scorecard-v2-summary-grid">
+        <div className="panel scorecard-v2-system">
+          <div className="panel-heading"><div><span className="eyebrow">正式系统</span><h2>中证1000 D1</h2></div><span className="formal-lane-badge">FORMAL</span></div>
+          <div className="scorecard-v2-primary-metrics">
+            <div><span>平均 Brier</span><strong>{score(cio?.average_brier)}</strong><small>baseline {score(cio?.baseline_brier)}</small></div>
+            <div><span>Brier Skill</span><strong>{percent(cio?.brier_skill, 1)}</strong><small>相对截止时冻结基线</small></div>
+            <div><span>独立目标日</span><strong>{cio?.independent_episodes ?? 0}</strong><small>不同版本绝不串分</small></div>
+          </div>
+        </div>
+        <div className="panel reasoning-queue-card">
+          <div className="panel-heading"><div><span className="eyebrow">盲审队列</span><h2>推理审核</h2></div><BrainCircuit size={18} /></div>
+          <strong>{humanQueue.length}</strong><span>条需要人工复验</span>
+          <small>{reviewRows.length ? `共 ${reviewRows.length} 条结果揭晓前审核` : reviews.isError ? 'Reasoning Review 接口尚不可用' : '尚无审核记录'}</small>
+        </div>
+      </section>
+
+      <div className="v2-scorecard-sections">
+        {sections.map((section, index) => (
+          <section className={`panel v2-scorecard-axis axis-${section.axis}`} key={section.axis}>
+            <div className="panel-heading">
+              <div><span className="eyebrow">Axis {index + 1}</span><h2>{section.title}</h2><span className="panel-caption">{axisMeta[index].description}</span></div>
+              <strong className="axis-row-count">{section.items.length} 项</strong>
+            </div>
+            <ScorecardAxisTable section={section} />
+          </section>
+        ))}
+      </div>
+
+      <div className="method-note"><strong>解释边界：</strong><span>`d1_impact` 与 Risk Critic 不按市场最终涨跌计算方向胜率；ablation 只做离线诊断；盲审是 advisory。所有可信度权重保持 shadow，不因样本达标自动进入正式聚合。</span></div>
+    </div>
+  )
+}
+
+export function Scorecards() {
+  const v2 = useAgentScorecardsV2()
+  if (v2.isLoading) return <LoadingPanel />
+  if (v2.data) return <FocusedScorecards />
+  return <LegacyScorecards />
 }

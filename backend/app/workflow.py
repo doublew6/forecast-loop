@@ -46,6 +46,7 @@ from .market_universe import (
 from .models import AgentOpinion, Forecast, WorkflowRun
 from .ports import EvidenceSnapshotSource
 from .schemas import AgentDraft, Citation, EvidenceItem, FrozenEvidenceSnapshot, Probabilities
+from .services.agent_tracing import TraceRecorder
 from .services.believability import (
     BELIEVABILITY_POLICY_VERSION,
     BelievabilityAgentScope,
@@ -62,6 +63,7 @@ from .services.task_queue import (
     fence_execution,
     finalize_execution_fence,
 )
+from .services.v1_run_admission import assert_v1_run_creation_allowed
 from .services.wiki import FrozenWikiCatalog, WikiCatalog
 
 
@@ -191,12 +193,14 @@ class CommitteeWorkflow:
         evidence_source: EvidenceSnapshotSource | None = None,
         universe: MarketUniverseSpec | None = None,
         runtime_mode: WorkflowRuntimeMode = "current",
+        trace_recorder: TraceRecorder | None = None,
     ) -> None:
         self.settings = settings
         self.database = database
         self.provider = provider or build_provider(settings)
         self.wiki = wiki or WikiCatalog.from_settings(settings)
         self.evidence_source = evidence_source
+        self.trace_recorder = trace_recorder
         self.universe = universe or load_market_universe(settings.market_universe_path)
         if self.universe.timezone != settings.timezone:
             raise ValueError("Configured market universe timezone must equal VERICOUNCIL_TIMEZONE")
@@ -295,6 +299,7 @@ class CommitteeWorkflow:
         wiki_entries = frozen_wiki.list_entries()
         mode = "demo" if self.settings.use_demo_provider else "live"
         with self.database.session_factory() as session:
+            assert_v1_run_creation_allowed(session)
             believability_snapshot = build_believability_snapshot(
                 session,
                 mode=mode,
