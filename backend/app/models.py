@@ -340,6 +340,7 @@ class UserJudgmentTarget(Base):
             "horizon",
             name="uq_user_judgment_target_identity",
         ),
+        UniqueConstraint("content_hash"),
         CheckConstraint(
             "mode IN ('demo', 'live')",
             name="ck_user_judgment_target_mode",
@@ -367,7 +368,7 @@ class UserJudgmentTarget(Base):
     locks_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     run_input_hash: Mapped[str] = mapped_column(String(64))
     market_universe_hash: Mapped[str] = mapped_column(String(64), index=True)
-    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     run: Mapped[WorkflowRun] = relationship(back_populates="user_judgment_targets")
@@ -511,6 +512,7 @@ class ForecastV2(Base):
     __tablename__ = "forecasts_v2"
     __table_args__ = (
         UniqueConstraint("run_id", "target_id", name="uq_forecast_v2_run_target"),
+        UniqueConstraint("source_signal_id", name="uq_forecast_v2_source_signal"),
         UniqueConstraint("content_hash", name="uq_forecast_v2_content_hash"),
         CheckConstraint("horizon IN ('D1', 'W1')", name="ck_forecast_v2_horizon"),
         CheckConstraint(
@@ -527,9 +529,7 @@ class ForecastV2(Base):
     run_id: Mapped[str] = mapped_column(
         ForeignKey("research_runs_v2.id", ondelete="CASCADE"), index=True
     )
-    source_signal_id: Mapped[str] = mapped_column(
-        ForeignKey("agent_signals_v2.id"), unique=True, index=True
-    )
+    source_signal_id: Mapped[str] = mapped_column(ForeignKey("agent_signals_v2.id"), index=True)
     schema_version: Mapped[str] = mapped_column(String(64))
     program_hash: Mapped[str] = mapped_column(String(64), index=True)
     target_id: Mapped[str] = mapped_column(String(120), index=True)
@@ -630,6 +630,10 @@ class ForecastEvaluationV2(Base):
     __tablename__ = "forecast_evaluations_v2"
     __table_args__ = (
         UniqueConstraint("forecast_id", name="uq_forecast_evaluation_v2_forecast"),
+        UniqueConstraint(
+            "signal_evaluation_id",
+            name="uq_forecast_evaluation_v2_signal_evaluation",
+        ),
         UniqueConstraint("content_hash", name="uq_forecast_evaluation_v2_hash"),
     )
 
@@ -638,7 +642,7 @@ class ForecastEvaluationV2(Base):
         ForeignKey("forecasts_v2.id", ondelete="CASCADE"), index=True
     )
     signal_evaluation_id: Mapped[str] = mapped_column(
-        ForeignKey("signal_evaluations_v2.id"), unique=True, index=True
+        ForeignKey("signal_evaluations_v2.id"), index=True
     )
     actual_value: Mapped[float] = mapped_column(Float)
     actual_label: Mapped[str] = mapped_column(String(16), index=True)
@@ -729,9 +733,7 @@ class ReflectionV2(Base):
         ForeignKey("forecasts_v2.id", ondelete="CASCADE"), index=True
     )
     forecast_hash: Mapped[str] = mapped_column(String(64), index=True)
-    evaluation_id: Mapped[str] = mapped_column(
-        ForeignKey("forecast_evaluations_v2.id"), index=True
-    )
+    evaluation_id: Mapped[str] = mapped_column(ForeignKey("forecast_evaluations_v2.id"), index=True)
     evaluation_hash: Mapped[str] = mapped_column(String(64), index=True)
     schema_version: Mapped[str] = mapped_column(String(64))
     target_id: Mapped[str] = mapped_column(String(120), index=True)
@@ -816,6 +818,7 @@ class UserJudgment(Base):
             "revision_number",
             name="uq_user_judgment_actor_target_revision",
         ),
+        UniqueConstraint("content_hash", name="uq_user_judgments_content_hash"),
         CheckConstraint(
             "(target_id IS NULL AND revision_number = 1) OR "
             "(target_id IS NOT NULL AND revision_number >= 1)",
@@ -894,7 +897,7 @@ class UserJudgment(Base):
     run_input_hash: Mapped[str] = mapped_column(String(64))
     forecast_input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     policy_version: Mapped[str] = mapped_column(String(32))
-    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
     wiki_path: Mapped[str] = mapped_column(Text)
     wiki_artifact_hash: Mapped[str] = mapped_column(String(64))
 
@@ -919,6 +922,8 @@ class UserJudgmentEvaluation(Base):
 
     __tablename__ = "user_judgment_evaluations"
     __table_args__ = (
+        UniqueConstraint("user_judgment_id"),
+        UniqueConstraint("content_hash"),
         CheckConstraint(
             "actual_label IN ('up', 'neutral', 'down')",
             name="ck_user_judgment_evaluation_label",
@@ -928,7 +933,6 @@ class UserJudgmentEvaluation(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_judgment_id: Mapped[str] = mapped_column(
         ForeignKey("user_judgments.id"),
-        unique=True,
         index=True,
     )
     batch_id: Mapped[str] = mapped_column(ForeignKey("evaluation_batches.id"), index=True)
@@ -946,7 +950,7 @@ class UserJudgmentEvaluation(Base):
     observation_hash: Mapped[str] = mapped_column(String(64))
     policy_version: Mapped[str] = mapped_column(String(32))
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
 
     judgment: Mapped[UserJudgment] = relationship(back_populates="evaluation")
     batch: Mapped[EvaluationBatch] = relationship()
@@ -1016,6 +1020,7 @@ class MarketSessionSnapshot(Base):
     __tablename__ = "market_session_snapshots"
     __table_args__ = (
         UniqueConstraint("batch_id", "index_code", name="uq_market_snapshot_batch_index"),
+        UniqueConstraint("content_hash"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -1040,7 +1045,7 @@ class MarketSessionSnapshot(Base):
     source_url: Mapped[str] = mapped_column(Text)
     source_hash: Mapped[str] = mapped_column(String(64))
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
 
     batch: Mapped[EvaluationBatch] = relationship(back_populates="market_snapshots")
 
