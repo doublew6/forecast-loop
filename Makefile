@@ -1,4 +1,4 @@
-.PHONY: install install-hooks public-preflight public-preflight-staged public-preflight-range dev backend worker frontend test lint build release-artifacts release-history-audit demo benchmark-verify agent-eval agent-eval-list agent-eval-prepare agent-eval-finalize agent-eval-status research-v2-prepare research-v2-finalize research-v2-shadow-manual research-v2-shadow-quant research-v2-reasoning-finalize research-v2-shadow-reasoning-finalize research-v2-reasoning-review research-v2-evaluate research-v2-reflection-create research-v2-reflection-review research-v2-activate snapshot prediction-snapshot codex-prepare codex-finalize codex-retry reflection-prepare reflection-freeze-sources reflection-finalize reflection-review reflection-render lesson-replay lesson-approve lesson-revalidate lesson-due lesson-verify judgment-record judgment-export judgment-verify market-snapshot market-import market-block migrate database-status migration-smoke recovery-backup recovery-verify recovery-restore docker-config docker-smoke docker-up docker-down
+.PHONY: install install-hooks public-preflight public-preflight-staged public-preflight-range dev backend worker frontend test lint build release-artifacts release-history-audit demo benchmark-verify agent-eval agent-eval-list agent-eval-prepare agent-eval-finalize agent-eval-status research-v2-prepare research-v2-finalize research-v2-notify research-v2-shadow-manual research-v2-shadow-quant research-v2-reasoning-finalize research-v2-shadow-reasoning-finalize research-v2-reasoning-review research-v2-evaluate research-v2-reflection-create research-v2-reflection-review research-v2-activate snapshot prediction-snapshot codex-prepare codex-finalize codex-retry reflection-prepare reflection-freeze-sources reflection-finalize reflection-review reflection-render lesson-replay lesson-approve lesson-revalidate lesson-due lesson-verify judgment-record judgment-export judgment-verify market-snapshot market-import market-block migrate database-status migration-smoke recovery-backup recovery-verify recovery-restore docker-config docker-smoke docker-up docker-down
 
 PYTHON ?= .venv/bin/python
 RELEASE_VERSION ?= 0.1.0
@@ -90,6 +90,9 @@ research-v2-prepare:
 research-v2-finalize:
 	@test -n "$(ARGS)" || (echo 'usage: make research-v2-finalize ARGS="/absolute/job/path"' && exit 2)
 	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 finalize $(ARGS)
+
+research-v2-notify:
+	PYTHONPATH=backend $(PYTHON) -m app.cli research-v2 notify $(ARGS)
 
 research-v2-shadow-manual:
 	@test -n "$(ARGS)" || (echo 'usage: make research-v2-shadow-manual ARGS="/absolute/manual-shadow-input.json"' && exit 2)

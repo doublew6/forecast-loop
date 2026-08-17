@@ -71,6 +71,14 @@ from .services.benchmark import (
     build_benchmark_report,
     verify_benchmark_golden,
 )
+from .services.daily_brief_v2 import (
+    DEFAULT_BRIEF_TITLE,
+    DEFAULT_DELIVERY_ROOT,
+    DailyBriefV2Error,
+    build_latest_daily_brief,
+    load_feishu_owner_config,
+    publish_daily_brief,
+)
 from .services.handoff import (
     finalize_handoff,
     prepare_handoff,
@@ -588,6 +596,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     research_finalize.add_argument("job_dir", type=Path)
     research_finalize.add_argument("--database-url", default=None)
+    research_notify = research_v2_commands.add_parser(
+        "notify",
+        help="Render or idempotently send the latest Live CSI1000 D1 owner brief.",
+    )
+    research_notify.add_argument("--run-id", default=None)
+    research_notify.add_argument("--env-file", type=Path, default=None)
+    research_notify.add_argument("--env-prefix", default="FORECAST_LOOP_FEISHU")
+    research_notify.add_argument("--title", default=DEFAULT_BRIEF_TITLE)
+    research_notify.add_argument("--state-root", type=Path, default=DEFAULT_DELIVERY_ROOT)
+    research_notify.add_argument("--dry-run", action="store_true")
+    research_notify.add_argument("--database-url", default=None)
     reasoning_finalize = research_v2_commands.add_parser(
         "reasoning-finalize",
         help="Finalize the blind reasoning review file task.",
@@ -1446,6 +1465,36 @@ def _research_v2_command(args: argparse.Namespace) -> int:
                 }
             )
             return 0
+        if command == "notify":
+            brief = build_latest_daily_brief(
+                database,
+                settings,
+                run_id=args.run_id,
+                title=args.title,
+            )
+            if args.dry_run:
+                _print_json({"status": "dry_run", "brief": brief.as_dict()})
+                return 0
+            if args.env_file is None:
+                raise DailyBriefV2Error("--env-file is required unless --dry-run is used")
+            config = load_feishu_owner_config(
+                args.env_file,
+                env_prefix=args.env_prefix,
+            )
+            result = publish_daily_brief(
+                brief,
+                config,
+                state_root=args.state_root,
+            )
+            _print_json(
+                {
+                    "status": result.status,
+                    "forecast_id": result.forecast_id,
+                    "target_date": result.target_date.isoformat(),
+                    "delivery_marker": str(result.marker),
+                }
+            )
+            return 0
         if command == "reasoning-finalize":
             rows = finalize_reasoning_review(database, settings, job_dir=args.job_dir)
             _print_json(
@@ -1606,7 +1655,7 @@ def _research_v2_command(args: argparse.Namespace) -> int:
             }
         )
         return 0
-    except (ResearchV2Error, ValidationError, ValueError) as exc:
+    except (ResearchV2Error, DailyBriefV2Error, ValidationError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     finally:
         database.dispose()
