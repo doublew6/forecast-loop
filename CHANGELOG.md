@@ -9,6 +9,8 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Deterministic, owner-only Feishu delivery for concise CSI 1000 D1 briefs,
+  with target-date idempotency, dry-run rendering, and safe retry markers.
 - Focused research v2 contracts and append-only workflows for one CSI 1000 D1
   activation target, a W1 relative shadow target, and D20 natural-horizon state.
 - Outcome-blind Agent Eval v2 file replay with per-target release gates,
