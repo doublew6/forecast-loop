@@ -114,6 +114,19 @@ describe('focused v2 research UI', () => {
             reasoning_average: 8.2, ablation_brier_delta: null, note: '正式前瞻样本',
           }],
         }],
+        premarket_history: [{
+          forecast_hash: 'f'.repeat(64), forecast_session: '2026-08-12', target_session: '2026-08-13',
+          predicted_direction: 'up', realized_return: 0.01, actual_label: 'up', direction_correct: true,
+          cumulative_sample_size: 1, cumulative_hits: 1, cumulative_win_rate: 1, rolling_20_win_rate: 1,
+          long_only_period_return: 0.01, long_short_period_return: 0.01,
+          long_only_cumulative_return: 0.01, long_short_cumulative_return: 0.01,
+        }, {
+          forecast_hash: 'e'.repeat(64), forecast_session: '2026-08-13', target_session: '2026-08-14',
+          predicted_direction: 'down', realized_return: -0.02, actual_label: 'down', direction_correct: true,
+          cumulative_sample_size: 2, cumulative_hits: 2, cumulative_win_rate: 1, rolling_20_win_rate: 1,
+          long_only_period_return: 0, long_short_period_return: 0.02,
+          long_only_cumulative_return: 0.01, long_short_cumulative_return: 0.0302,
+        }],
       })
       if (url.endsWith('/api/v2/reasoning-reviews')) return response({ items: [{
         id: 'review-1', signal_id: 'signal-1', agent_id: 'cio_agent', target_id: 'csi1000-absolute-d1',
@@ -130,6 +143,9 @@ describe('focused v2 research UI', () => {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0)
     }
     expect(screen.getByText('13.6%')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '盘前预测历史成绩' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '策略收益曲线' })).toBeInTheDocument()
+    expect(screen.getByText('+3.0%')).toBeInTheDocument()
     expect(screen.queryByText('当前最佳角色')).not.toBeInTheDocument()
   })
 

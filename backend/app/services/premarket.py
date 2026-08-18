@@ -9,9 +9,9 @@ import os
 import stat
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
 
@@ -198,6 +198,96 @@ def evaluate_premarket_run(
     return evaluation
 
 
+def load_premarket_history(
+    settings: Settings,
+    *,
+    settled_before: date | None = None,
+) -> list[dict[str, Any]]:
+    """Load sealed episodes and derive deterministic direction/strategy history.
+
+    Incomplete jobs are ignored. Once an evaluation exists, the complete
+    forecast/outcome/evaluation chain must validate and reproduce exactly.
+    Strategy returns are gross open-to-open returns with neutral signals in
+    cash; they intentionally exclude fees, slippage, and shorting costs.
+    """
+
+    episodes: list[tuple[PremarketForecastV1, PremarketEvaluationV1]] = []
+    seen_sessions: set[date] = set()
+    for job_dir in sorted(_handoff_root(settings).iterdir(), key=lambda path: path.name):
+        if job_dir.is_symlink():
+            raise PremarketServiceError("premarket history contains a symlink")
+        if not job_dir.is_dir():
+            continue
+        evaluation_path = job_dir / "evaluation.json"
+        if not evaluation_path.exists():
+            continue
+        forecast_path = job_dir / "forecast.json"
+        outcome_path = job_dir / "outcome.json"
+        if not forecast_path.exists() or not outcome_path.exists():
+            raise PremarketServiceError("evaluated premarket job is incomplete")
+        forecast = _read_model(forecast_path, PremarketForecastV1)
+        outcome = _read_model(outcome_path, PremarketOutcomeV1)
+        evaluation = _read_model(evaluation_path, PremarketEvaluationV1)
+        if forecast.run_id != job_dir.name:
+            raise PremarketServiceError("premarket job directory does not match run_id")
+        reproduced = evaluate_premarket_forecast(
+            forecast,
+            outcome,
+            evaluated_at=evaluation.evaluated_at,
+        )
+        if reproduced.content_hash != evaluation.content_hash:
+            raise PremarketServiceError("premarket evaluation does not reproduce")
+        if settled_before is not None and forecast.target_session >= settled_before:
+            continue
+        if forecast.forecast_session in seen_sessions:
+            raise PremarketServiceError("duplicate evaluated premarket forecast session")
+        seen_sessions.add(forecast.forecast_session)
+        episodes.append((forecast, evaluation))
+
+    episodes.sort(key=lambda item: (item[0].forecast_session, item[0].content_hash))
+    material: list[bool] = []
+    long_only_nav = 1.0
+    long_short_nav = 1.0
+    history: list[dict[str, Any]] = []
+    for forecast, evaluation in episodes:
+        direction_correct: bool | None = None
+        if evaluation.actual_label != "neutral":
+            direction_correct = forecast.direction == evaluation.actual_label
+            material.append(direction_correct)
+        realized_return = evaluation.realized_return
+        long_only_period_return = realized_return if forecast.direction == "up" else 0.0
+        long_short_period_return = (
+            realized_return
+            if forecast.direction == "up"
+            else -realized_return
+            if forecast.direction == "down"
+            else 0.0
+        )
+        long_only_nav *= 1.0 + long_only_period_return
+        long_short_nav *= 1.0 + long_short_period_return
+        rolling = material[-20:]
+        history.append(
+            {
+                "forecast_hash": forecast.content_hash,
+                "forecast_session": forecast.forecast_session,
+                "target_session": forecast.target_session,
+                "predicted_direction": forecast.direction,
+                "realized_return": realized_return,
+                "actual_label": evaluation.actual_label,
+                "direction_correct": direction_correct,
+                "cumulative_sample_size": len(material),
+                "cumulative_hits": sum(material),
+                "cumulative_win_rate": sum(material) / len(material) if material else None,
+                "rolling_20_win_rate": sum(rolling) / len(rolling) if rolling else None,
+                "long_only_period_return": long_only_period_return,
+                "long_short_period_return": long_short_period_return,
+                "long_only_cumulative_return": long_only_nav - 1.0,
+                "long_short_cumulative_return": long_short_nav - 1.0,
+            }
+        )
+    return history
+
+
 def _write_or_match(path: Path, value, model_type) -> None:
     if path.exists():
         existing = _read_model(path, model_type)
@@ -230,6 +320,11 @@ def build_premarket_brief(
         if items:
             grouped.append(f"{label}：{'；'.join(items)}")
     probabilities = forecast.probabilities
+    history = load_premarket_history(
+        settings,
+        settled_before=forecast.forecast_session,
+    )
+    feedback = _brief_feedback_line(history[-1]) if history else None
     lines = [
         f"【{title.strip()}】",
         (
@@ -240,6 +335,7 @@ def build_premarket_brief(
             f"判断：{direction}｜上涨 {probabilities.up:.0%}｜"
             f"小幅波动 {probabilities.neutral:.0%}｜下跌 {probabilities.down:.0%}"
         ),
+        *([feedback] if feedback else []),
         f"证据截止：{forecast.evidence_cutoff:%H:%M}｜Risk Critic：{risk}",
         *grouped,
         f"策略摘要：{_one_line(forecast.rationale, limit=180)}",
@@ -252,6 +348,25 @@ def build_premarket_brief(
         target_session=forecast.target_session.isoformat(),
         text=text,
         content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    )
+
+
+def _brief_feedback_line(point: dict[str, Any]) -> str:
+    predicted = {"up": "涨", "neutral": "小波动", "down": "跌"}[point["predicted_direction"]]
+    verdict = (
+        "小波动"
+        if point["direction_correct"] is None
+        else "命中"
+        if point["direction_correct"]
+        else "未命中"
+    )
+    realized = point["realized_return"]
+    win_rate = point["cumulative_win_rate"]
+    rate = "—" if win_rate is None else f"{win_rate:.0%}"
+    return (
+        f"反馈：{point['forecast_session']:%m-%d}→{point['target_session']:%m-%d} "
+        f"预测{predicted}/实际{realized:+.2%}/{verdict}｜"
+        f"胜率 {rate}（{point['cumulative_hits']}/{point['cumulative_sample_size']}）"
     )
 
 

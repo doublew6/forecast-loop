@@ -1,12 +1,12 @@
 import { Activity, BarChart3, BrainCircuit, GitCompareArrows, HelpCircle, SearchCheck, Target, Waypoints } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link } from 'react-router'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { DemoBanner, EmptyState, LoadingPanel, PageHeading, SampleWarning } from '../components/Common'
 import { useAgentScorecardsV2, useReasoningReviewsV2, useScorecards } from '../lib/api'
-import { percent } from '../lib/format'
-import type { AgentScorecardAxisV2, AgentScorecardSectionV2 } from '../lib/types'
+import { percent, signedPercent } from '../lib/format'
+import type { AgentScorecardAxisV2, AgentScorecardSectionV2, PremarketHistoryPoint } from '../lib/types'
 
 const workflowRoleLabel = {
   research: 'Research',
@@ -205,6 +205,83 @@ function ScorecardAxisTable({ section }: { section: AgentScorecardSectionV2 }) {
   )
 }
 
+function PremarketOutcomeLedger({ rows }: { rows: PremarketHistoryPoint[] }) {
+  if (!rows.length) {
+    return (
+      <section className="panel premarket-outcome-ledger">
+        <EmptyState title="等待首个 Open-to-Open 结算" description="只有完整封签的预测、开盘结果与评价链会进入历史成绩。" />
+      </section>
+    )
+  }
+  const latest = rows.at(-1)!
+  const chartRows = rows.map((row) => ({
+    ...row,
+    date: row.target_session.slice(5),
+    cumulative: row.cumulative_win_rate === null ? null : row.cumulative_win_rate * 100,
+    rolling: row.rolling_20_win_rate === null ? null : row.rolling_20_win_rate * 100,
+    longOnly: row.long_only_cumulative_return * 100,
+    longShort: row.long_short_cumulative_return * 100,
+  }))
+  return (
+    <section className="panel premarket-outcome-ledger" aria-labelledby="premarket-outcome-heading">
+      <div className="panel-heading">
+        <div><span className="eyebrow">Open-to-Open · Shadow 结算</span><h2 id="premarket-outcome-heading">盘前预测历史成绩</h2><span className="panel-caption">只统计噪声带外方向样本；小波动保留审计记录但不计入胜率。</span></div>
+        <div className="premarket-win-seal"><span>累计胜率</span><strong>{percent(latest.cumulative_win_rate, 1)}</strong><small>{latest.cumulative_hits}/{latest.cumulative_sample_size} 命中</small></div>
+      </div>
+      <div className="premarket-win-chart" role="img" aria-label="中证1000 Open-to-Open 累计与滚动20次胜率曲线">
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={chartRows} margin={{ top: 18, right: 14, bottom: 4, left: -10 }}>
+            <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+            <XAxis dataKey="date" tick={{ fill: 'var(--muted)', fontSize: 11 }} tickLine={false} axisLine={false} />
+            <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} tick={{ fill: 'var(--muted)', fontSize: 11 }} tickLine={false} axisLine={false} />
+            <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} labelFormatter={(value) => `结算日 ${value}`} />
+            <ReferenceLine y={50} stroke="var(--amber)" strokeDasharray="4 4" />
+            <Line type="monotone" dataKey="cumulative" name="累计胜率" stroke="var(--green)" strokeWidth={2.25} dot={{ r: 2.5, fill: 'var(--surface)', strokeWidth: 2 }} connectNulls />
+            <Line type="monotone" dataKey="rolling" name="滚动20次" stroke="var(--blue)" strokeWidth={1.5} strokeDasharray="5 4" dot={false} connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="premarket-return-section">
+        <div className="premarket-return-heading">
+          <div><span className="eyebrow">复合毛收益</span><h3>策略收益曲线</h3><small>纯多头仅在偏涨时持有；多空在偏涨时做多、偏跌时做空。</small></div>
+          <div className="premarket-return-metrics" aria-label="最新策略累计收益">
+            <span><i className="long-only" />纯多头 <strong>{signedPercent(latest.long_only_cumulative_return, 1)}</strong></span>
+            <span><i className="long-short" />多空 <strong>{signedPercent(latest.long_short_cumulative_return, 1)}</strong></span>
+          </div>
+        </div>
+        <div className="premarket-return-chart" role="img" aria-label="中证1000 Open-to-Open 纯多头与多空策略累计毛收益曲线">
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={chartRows} margin={{ top: 18, right: 14, bottom: 4, left: -10 }}>
+              <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: 'var(--muted)', fontSize: 11 }} tickLine={false} axisLine={false} />
+              <YAxis tickFormatter={(value) => `${Number(value).toFixed(0)}%`} tick={{ fill: 'var(--muted)', fontSize: 11 }} tickLine={false} axisLine={false} />
+              <Tooltip formatter={(value) => `${Number(value).toFixed(2)}%`} labelFormatter={(value) => `结算日 ${value}`} />
+              <ReferenceLine y={0} stroke="var(--amber)" strokeDasharray="4 4" />
+              <Line type="monotone" dataKey="longOnly" name="纯多头" stroke="var(--green)" strokeWidth={2.25} dot={{ r: 2.5, fill: 'var(--surface)', strokeWidth: 2 }} />
+              <Line type="monotone" dataKey="longShort" name="多空" stroke="var(--blue)" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="premarket-return-note">毛收益按日复合；小波动信号空仓。未计手续费、滑点、融券及做空成本，不代表可交易净收益。</p>
+      </div>
+      <div className="table-scroll premarket-outcome-table">
+        <table className="data-table">
+          <thead><tr><th>区间</th><th>预测</th><th>实际收益</th><th>结果</th><th>累计胜率</th></tr></thead>
+          <tbody>{[...rows].reverse().slice(0, 20).map((row) => (
+            <tr key={row.forecast_hash}>
+              <td><span>{row.forecast_session.slice(5)} → {row.target_session.slice(5)}</span><small>开盘 → 开盘</small></td>
+              <td>{row.predicted_direction === 'up' ? '偏涨' : row.predicted_direction === 'down' ? '偏跌' : '小波动'}</td>
+              <td className={row.realized_return >= 0 ? 'positive-value' : 'negative-value'}>{signedPercent(row.realized_return, 2)}</td>
+              <td><span className={`outcome-verdict ${row.direction_correct === null ? 'neutral' : row.direction_correct ? 'hit' : 'miss'}`}>{row.direction_correct === null ? '小波动' : row.direction_correct ? '命中' : '未命中'}</span></td>
+              <td>{percent(row.cumulative_win_rate, 1)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
 function FocusedScorecards() {
   const query = useAgentScorecardsV2()
   const reviews = useReasoningReviewsV2()
@@ -221,6 +298,7 @@ function FocusedScorecards() {
   const humanQueue = reviewRows.filter(
     (item) => item.human_review_required && item.human_review_status === 'pending',
   )
+  const premarketHistory = query.data?.premarket_history ?? []
 
   return (
     <div className="page scorecard-page focused-scorecard-page">
@@ -262,6 +340,8 @@ function FocusedScorecards() {
           <small>{reviewRows.length ? `共 ${reviewRows.length} 条结果揭晓前审核` : reviews.isError ? 'Reasoning Review 接口尚不可用' : '尚无审核记录'}</small>
         </div>
       </section>
+
+      <PremarketOutcomeLedger rows={premarketHistory} />
 
       <div className="v2-scorecard-sections">
         {sections.map((section, index) => (

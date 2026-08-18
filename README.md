@@ -76,6 +76,8 @@ Agent 数量、表达气势或单次盈亏。
 交易日官方开盘。每个 Agent 同时引用冻结 Wiki 和按角色分配的盘前证据；旧
 close-to-close 历史保持原语义。完整时间边界和文件交接见
 [盘前动态证据与 open-to-open 协议](docs/premarket-open-to-open.md)。
+完成评价后，成绩页会展示预测与实际、累计/滚动胜率，以及纯多头和多空两条
+Open-to-Open 复合毛收益曲线；盘前日报仅引用预测日前已完整结算的最近反馈。
 
 ## Architecture
 

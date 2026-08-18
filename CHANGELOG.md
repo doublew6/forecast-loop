@@ -13,6 +13,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
   with frozen overnight news, global-market and FX/rates evidence, Agent-level
   routing, Wiki bindings, deterministic risk discounting, sealed evaluation,
   and idempotent owner briefs.
+- Audited pre-market history with lag-safe brief feedback, cumulative and
+  rolling direction accuracy, plus gross compounded long-only and long-short
+  strategy curves in the scorecard UI.
 - Deterministic, owner-only Feishu delivery for concise CSI 1000 D1 briefs,
   with target-date idempotency, dry-run rendering, and safe retry markers.
 - Focused research v2 contracts and append-only workflows for one CSI 1000 D1

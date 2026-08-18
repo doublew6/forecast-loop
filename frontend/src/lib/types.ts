@@ -639,6 +639,25 @@ export interface AgentScorecardsV2 {
   program_hash: string
   generated_at: string
   sections: AgentScorecardSectionV2[]
+  premarket_history?: PremarketHistoryPoint[]
+}
+
+export interface PremarketHistoryPoint {
+  forecast_hash: string
+  forecast_session: string
+  target_session: string
+  predicted_direction: OutcomeLabel
+  realized_return: number
+  actual_label: OutcomeLabel
+  direction_correct: boolean | null
+  cumulative_sample_size: number
+  cumulative_hits: number
+  cumulative_win_rate: number | null
+  rolling_20_win_rate: number | null
+  long_only_period_return: number
+  long_short_period_return: number
+  long_only_cumulative_return: number
+  long_short_cumulative_return: number
 }
 
 export interface ReasoningReviewV2 {

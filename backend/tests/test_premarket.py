@@ -17,6 +17,7 @@ from app.premarket import (
     PremarketDraftBundleV1,
     PremarketEvidenceItemV1,
     PremarketEvidenceSnapshotBodyV1,
+    PremarketForecastV1,
     PremarketOutcomeBodyV1,
     PremarketProgramBodyV1,
     PremarketWikiReferenceV1,
@@ -35,6 +36,7 @@ from app.services.premarket import (
     build_premarket_brief,
     evaluate_premarket_run,
     finalize_premarket_run,
+    load_premarket_history,
     prepare_premarket_run,
 )
 from pydantic import ValidationError
@@ -389,3 +391,68 @@ def test_file_first_service_prepares_finalizes_and_renders_brief(tmp_path) -> No
     assert evaluation.actual_label == "up"
     assert (job_dir / "outcome.json").exists()
     assert (job_dir / "evaluation.json").exists()
+
+    first_history = load_premarket_history(settings)
+    assert len(first_history) == 1
+    assert first_history[0]["direction_correct"] is True
+    assert first_history[0]["long_only_cumulative_return"] == pytest.approx(0.02)
+    assert first_history[0]["long_short_cumulative_return"] == pytest.approx(0.02)
+    assert load_premarket_history(settings, settled_before=TARGET) == []
+
+    down_payload = forecast.model_dump(mode="json", exclude={"content_hash"})
+    down_payload.update(
+        {
+            "run_id": "down-run",
+            "forecast_session": TARGET.isoformat(),
+            "target_session": (TARGET + timedelta(days=1)).isoformat(),
+            "direction": "down",
+            "probabilities": {"up": 0.20, "neutral": 0.25, "down": 0.55},
+        }
+    )
+    down_forecast = PremarketForecastV1(
+        **down_payload,
+        content_hash=content_hash(down_payload),
+    )
+    down_observed_at = datetime(2026, 8, 20, 9, 31, tzinfo=ZONE)
+    down_outcome = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=down_forecast.content_hash,
+            forecast_session=TARGET,
+            target_session=TARGET + timedelta(days=1),
+            start_open=100.0,
+            end_open=95.0,
+            observed_at=down_observed_at,
+            source=_source("outcome-down", down_observed_at - timedelta(seconds=10)),
+        )
+    )
+    down_evaluation = evaluate_premarket_forecast(
+        down_forecast,
+        down_outcome,
+        evaluated_at=down_observed_at,
+    )
+    down_job = settings.handoff_root / "premarket" / "down-run"
+    down_job.mkdir()
+    (down_job / "forecast.json").write_text(
+        down_forecast.model_dump_json(),
+        encoding="utf-8",
+    )
+    (down_job / "outcome.json").write_text(
+        down_outcome.model_dump_json(),
+        encoding="utf-8",
+    )
+    (down_job / "evaluation.json").write_text(
+        down_evaluation.model_dump_json(),
+        encoding="utf-8",
+    )
+
+    history = load_premarket_history(settings)
+    assert len(history) == 2
+    assert history[-1]["long_only_period_return"] == 0.0
+    assert history[-1]["long_short_period_return"] == pytest.approx(0.05)
+    assert history[-1]["long_only_cumulative_return"] == pytest.approx(0.02)
+    assert history[-1]["long_short_cumulative_return"] == pytest.approx(0.071)
+    available_for_august_20_brief = load_premarket_history(
+        settings,
+        settled_before=TARGET + timedelta(days=1),
+    )
+    assert [item["target_session"] for item in available_for_august_20_brief] == [TARGET]

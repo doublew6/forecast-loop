@@ -77,6 +77,8 @@ make premarket-notify ARGS="/absolute/job/path --env-file /absolute/owner.env"
 模型只能创建 `drafts.json`。`finalize` 验证时间、哈希、assignment、Agent 证据权限、
 Wiki identity 和 09:24 deadline，然后写入不可覆盖的 `forecast.json` 与 `receipt.json`。
 飞书发送按预测交易日和接收者幂等；不同内容不能静默覆盖已发送结果。
+日报反馈只选择 `target_session < 当前 forecast_session` 的最近完整评价，因此盘前发送
+时不会把当天尚未出现的开盘价当成真实结果。没有合格历史时只发送当期预测。
 
 ## 到期评价
 
@@ -90,3 +92,12 @@ neutral_band = 0.25 × stdev(last_20_completed_open_to_open_returns)
 20 个历史收益只使用预测日前已经完成的 open-to-open episode。结果按
 `up / neutral / down` 计算多分类 Brier 和方向诊断；结果揭晓后不得改写原快照、
 Agent 草稿或 forecast。
+
+成绩页从完整封签的 `forecast.json`、`outcome.json` 和 `evaluation.json` 重新验证
+评价链，再按日期生成累计胜率、滚动 20 次胜率和两条复合毛收益曲线：
+
+- 纯多头：预测上涨时持有中证1000，预测下跌或小波动时空仓；
+- 多空：预测上涨时做多、预测下跌时做空，小波动时空仓。
+
+收益曲线不包含手续费、滑点、融券和做空成本，只是对预测信号的历史诊断，不代表
+可交易净收益。实际结果落在噪声带内时保留记录，但不进入方向胜率分母。

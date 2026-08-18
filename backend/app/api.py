@@ -133,6 +133,7 @@ from .services.prediction_status import (
     build_prediction_status,
     run_uses_market_universe,
 )
+from .services.premarket import PremarketServiceError, load_premarket_history
 from .services.reflection_sources import load_frozen_source_timeline
 from .services.research_v2 import (
     ResearchV2Error,
@@ -210,13 +211,16 @@ def latest_v2_forecasts(db: DBSession) -> V2LatestForecastsResponse:
 @router.get("/v2/agent-scorecards", response_model=V2AgentScorecardsResponse)
 def v2_agent_scorecards(request: Request, db: DBSession) -> V2AgentScorecardsResponse:
     generated_at = datetime.now(ZoneInfo(request.app.state.settings.timezone))
-    return V2AgentScorecardsResponse.model_validate(
-        agent_scorecards_v2(
-            db,
-            generated_at=generated_at,
-            ablation_values=latest_agent_eval_v2_ablation_values(request.app.state.settings),
-        )
+    payload = agent_scorecards_v2(
+        db,
+        generated_at=generated_at,
+        ablation_values=latest_agent_eval_v2_ablation_values(request.app.state.settings),
     )
+    try:
+        payload["premarket_history"] = load_premarket_history(request.app.state.settings)
+    except PremarketServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return V2AgentScorecardsResponse.model_validate(payload)
 
 
 @router.get("/v2/reasoning-reviews", response_model=V2ReasoningReviewListResponse)
