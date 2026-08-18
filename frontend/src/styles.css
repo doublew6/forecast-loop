@@ -368,6 +368,31 @@ a.citation-item:hover { border-color: #c6d4ce; }
 .v2-axis-overview strong { grid-column: 1 / -1; font-size: 22px; font-weight: 680; font-variant-numeric: tabular-nums; }
 .v2-axis-overview small { grid-column: 1 / -1; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .scorecard-v2-summary-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(250px, .45fr); gap: 12px; margin-top: 12px; }
+.premarket-outcome-ledger { margin-top: 12px; padding: 18px; }
+.premarket-win-seal { display: grid; min-width: 132px; padding-left: 18px; border-left: 1px solid var(--line-soft); text-align: right; }
+.premarket-win-seal span, .premarket-win-seal small { color: var(--muted); font-size: 11px; }
+.premarket-win-seal strong { color: var(--green-deep); font-size: 25px; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.premarket-win-chart { margin-top: 12px; padding: 8px 4px 0; border-top: 1px solid var(--line-soft); }
+.premarket-return-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.premarket-return-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.premarket-return-heading h3 { margin: 3px 0 0; font-size: 17px; font-weight: 680; }
+.premarket-return-heading small, .premarket-return-note { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.premarket-return-metrics { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 16px; color: var(--ink-soft); font-size: 11px; }
+.premarket-return-metrics span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.premarket-return-metrics i { width: 14px; height: 2px; border-radius: 999px; }
+.premarket-return-metrics i.long-only { background: var(--green); }
+.premarket-return-metrics i.long-short { background: var(--blue); }
+.premarket-return-metrics strong { color: var(--ink); font-size: 17px; font-variant-numeric: tabular-nums; }
+.premarket-return-chart { margin-top: 8px; padding: 0 4px; }
+.premarket-return-note { margin: 0 4px 4px; text-wrap: pretty; }
+.premarket-outcome-table { max-height: 340px; margin-top: 4px; border-top: 1px solid var(--line-soft); }
+.premarket-outcome-table td { font-variant-numeric: tabular-nums; }
+.premarket-outcome-table td:first-child span, .premarket-outcome-table td:first-child small { display: block; }
+.premarket-outcome-table td:first-child small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.outcome-verdict { display: inline-flex; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; }
+.outcome-verdict.hit { color: var(--green-deep); background: var(--green-soft); }
+.outcome-verdict.miss { color: var(--red); background: var(--red-soft); }
+.outcome-verdict.neutral { color: var(--amber); background: var(--amber-soft); }
 .scorecard-v2-system, .reasoning-queue-card { padding: 17px 18px; }
 .scorecard-v2-primary-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 15px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; }
 .scorecard-v2-primary-metrics > div { display: flex; min-height: 78px; flex-direction: column; justify-content: center; gap: 4px; padding: 11px 14px; border-left: 1px solid var(--line-soft); }
@@ -1373,6 +1398,9 @@ a.wiki-atlas-source-row:hover { color: var(--green-deep); background: var(--surf
 }
 
 @media (max-width: 520px) {
+  .premarket-outcome-ledger > .panel-heading, .premarket-return-heading { align-items: flex-start; flex-direction: column; }
+  .premarket-win-seal { width: 100%; padding: 12px 0 0; border-top: 1px solid var(--line-soft); border-left: 0; text-align: left; }
+  .premarket-return-metrics { width: 100%; justify-content: flex-start; }
   .focus-program-strip, .v2-axis-overview { grid-template-columns: 1fr; }
   .focus-program-strip > div { border-top: 1px solid var(--line-soft); border-left: 0; }
   .focus-program-strip > div:first-child { border-top: 0; }

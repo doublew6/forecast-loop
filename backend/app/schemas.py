@@ -239,10 +239,29 @@ class V2ScorecardSection(APIModel):
     items: list[V2ScorecardItem]
 
 
+class PremarketHistoryPointRead(APIModel):
+    forecast_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    forecast_session: date
+    target_session: date
+    predicted_direction: Literal["up", "neutral", "down"]
+    realized_return: float
+    actual_label: Literal["up", "neutral", "down"]
+    direction_correct: bool | None
+    cumulative_sample_size: int = Field(ge=0)
+    cumulative_hits: int = Field(ge=0)
+    cumulative_win_rate: float | None = Field(default=None, ge=0, le=1)
+    rolling_20_win_rate: float | None = Field(default=None, ge=0, le=1)
+    long_only_period_return: float
+    long_short_period_return: float
+    long_only_cumulative_return: float
+    long_short_cumulative_return: float
+
+
 class V2AgentScorecardsResponse(APIModel):
     program_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     generated_at: datetime
     sections: list[V2ScorecardSection]
+    premarket_history: list[PremarketHistoryPointRead] = Field(default_factory=list)
 
 
 class V2ReasoningReviewRead(APIModel):
