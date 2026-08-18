@@ -9,6 +9,10 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- A separate 09:15 pre-market protocol for CSI 1000 open-to-open forecasts,
+  with frozen overnight news, global-market and FX/rates evidence, Agent-level
+  routing, Wiki bindings, deterministic risk discounting, sealed evaluation,
+  and idempotent owner briefs.
 - Deterministic, owner-only Feishu delivery for concise CSI 1000 D1 briefs,
   with target-date idempotency, dry-run rendering, and safe retry markers.
 - Focused research v2 contracts and append-only workflows for one CSI 1000 D1

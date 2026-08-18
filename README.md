@@ -71,6 +71,12 @@ Agent 数量、表达气势或单次盈亏。
 目标。完整契约、运行步骤与激活门禁见
 [单主标的、多周期研究协议 v2](docs/research-program-v2.md)。
 
+盘前研究使用独立的 `csi1000-open-to-open-d1` 目标：上一交易日收盘后开始收集
+动态资讯与外盘证据，09:10 冻结，09:15 形成判断，评价窗口为当天官方开盘到下一
+交易日官方开盘。每个 Agent 同时引用冻结 Wiki 和按角色分配的盘前证据；旧
+close-to-close 历史保持原语义。完整时间边界和文件交接见
+[盘前动态证据与 open-to-open 协议](docs/premarket-open-to-open.md)。
+
 ## Architecture
 
 ```text

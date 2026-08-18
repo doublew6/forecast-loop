@@ -88,6 +88,16 @@ from .services.judgment_bundle import (
     export_judgment_bundle,
     verify_judgment_bundle,
 )
+from .services.premarket import (
+    DEFAULT_PREMARKET_DELIVERY_ROOT,
+    DEFAULT_PREMARKET_TITLE,
+    PremarketServiceError,
+    build_premarket_brief,
+    evaluate_premarket_run,
+    finalize_premarket_run,
+    prepare_premarket_run,
+    publish_premarket_brief,
+)
 from .services.recovery import (
     RecoveryError,
     create_backup,
@@ -154,6 +164,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _agent_eval_command(args)
     if args.command == "research-v2":
         return _research_v2_command(args)
+    if args.command == "premarket":
+        return _premarket_command(args)
     if args.command == "database":
         return _database_command(args)
     if args.command == "recovery":
@@ -384,10 +396,7 @@ def _parser() -> argparse.ArgumentParser:
 
     judgment_verify = judgment_commands.add_parser(
         "verify",
-        help=(
-            "Verify a portable bundle path, or recompute a private record by "
-            "judgment id."
-        ),
+        help=("Verify a portable bundle path, or recompute a private record by judgment id."),
     )
     judgment_verify.add_argument("judgment_target")
     judgment_verify.add_argument("--database-url", default=None)
@@ -679,6 +688,50 @@ def _parser() -> argparse.ArgumentParser:
     research_activate.add_argument("--actor", required=True)
     research_activate.add_argument("--database-url", default=None)
 
+    premarket = commands.add_parser(
+        "premarket",
+        help="Operate the 09:15 open-to-open file handoff and owner brief.",
+    )
+    premarket_commands = premarket.add_subparsers(
+        dest="premarket_command",
+        required=True,
+    )
+    premarket_prepare = premarket_commands.add_parser(
+        "prepare",
+        help="Validate a premarket snapshot and create the Codex draft task.",
+    )
+    premarket_prepare.add_argument("--snapshot", type=Path, required=True)
+    premarket_finalize = premarket_commands.add_parser(
+        "finalize",
+        help="Validate premarket drafts and seal the open-to-open forecast.",
+    )
+    premarket_finalize.add_argument("job_dir", type=Path)
+    premarket_evaluate = premarket_commands.add_parser(
+        "evaluate",
+        help="Seal a trusted open-to-open outcome and score the forecast.",
+    )
+    premarket_evaluate.add_argument("job_dir", type=Path)
+    premarket_evaluate.add_argument("--outcome", type=Path, required=True)
+    premarket_brief = premarket_commands.add_parser(
+        "brief",
+        help="Render the sealed premarket forecast as a short owner report.",
+    )
+    premarket_brief.add_argument("job_dir", type=Path)
+    premarket_brief.add_argument("--title", default=DEFAULT_PREMARKET_TITLE)
+    premarket_notify = premarket_commands.add_parser(
+        "notify",
+        help="Idempotently send a sealed premarket forecast to the owner.",
+    )
+    premarket_notify.add_argument("job_dir", type=Path)
+    premarket_notify.add_argument("--env-file", type=Path, required=True)
+    premarket_notify.add_argument("--env-prefix", default="FORECAST_LOOP_FEISHU")
+    premarket_notify.add_argument("--title", default=DEFAULT_PREMARKET_TITLE)
+    premarket_notify.add_argument(
+        "--state-root",
+        type=Path,
+        default=DEFAULT_PREMARKET_DELIVERY_ROOT,
+    )
+
     database = commands.add_parser(
         "database",
         help="Run explicit Alembic migrations or inspect schema readiness.",
@@ -946,9 +999,7 @@ def _job_execution_command(args: argparse.Namespace) -> int:
     if args.jobs_command == "prepared":
         state = store.record_prepared(args.execution_id, args.job_dir)
         instruction = (
-            store.draft_instruction(args.execution_id)
-            if state.phase == "awaiting_draft"
-            else None
+            store.draft_instruction(args.execution_id) if state.phase == "awaiting_draft" else None
         )
         _print_json(
             {
@@ -1013,10 +1064,7 @@ def _audit_command(args: argparse.Namespace) -> int:
 
 
 def _judgment_command(args: argparse.Namespace) -> int:
-    if (
-        args.judgment_command == "verify"
-        and _looks_like_bundle_path(args.judgment_target)
-    ):
+    if args.judgment_command == "verify" and _looks_like_bundle_path(args.judgment_target):
         manifest = verify_judgment_bundle(Path(args.judgment_target))
         _print_json(
             {
@@ -1088,9 +1136,7 @@ def _judgment_command(args: argparse.Namespace) -> int:
                     wiki_root=wiki_root,
                     timezone=settings.timezone,
                     market_open=settings.user_judgment_market_open,
-                    expected_mode=(
-                        "demo" if settings.use_demo_provider else "live"
-                    ),
+                    expected_mode=("demo" if settings.use_demo_provider else "live"),
                     market_universe_hash=load_market_universe(
                         settings.market_universe_path
                     ).content_hash,
@@ -1136,14 +1182,7 @@ def _judgment_command(args: argparse.Namespace) -> int:
 
 def _agent_command(args: argparse.Namespace) -> int:
     if args.agent_command == "list":
-        _print_json(
-            {
-                "items": [
-                    spec.model_dump(mode="json")
-                    for spec in registered_agent_specs()
-                ]
-            }
-        )
+        _print_json({"items": [spec.model_dump(mode="json") for spec in registered_agent_specs()]})
         return 0
     if args.agent_command == "show":
         try:
@@ -1227,9 +1266,7 @@ def _contract_command(args: argparse.Namespace) -> int:
 def _worker_command(args: argparse.Namespace) -> int:
     settings = Settings()
     if args.database_url is not None:
-        settings = settings.model_copy(
-            update={"database_url": args.database_url}
-        )
+        settings = settings.model_copy(update={"database_url": args.database_url})
     if args.poll_interval <= 0:
         raise SystemExit("--poll-interval must be positive")
     worker_id = args.worker_id or f"worker-{uuid4().hex[:12]}"
@@ -1326,8 +1363,7 @@ def _agent_eval_command(args: argparse.Namespace) -> int:
         _print_json(
             {
                 "items": [
-                    item.model_dump(mode="json")
-                    for item in AgentEvalStore(settings).list_suites()
+                    item.model_dump(mode="json") for item in AgentEvalStore(settings).list_suites()
                 ]
             }
         )
@@ -1396,8 +1432,7 @@ def _agent_eval_command(args: argparse.Namespace) -> int:
             source=args.source,
         )
         idempotency_key = args.idempotency_key or (
-            f"cli:{args.suite}:{args.suite_version or 'latest'}:"
-            f"{args.baseline}:{args.candidate}"
+            f"cli:{args.suite}:{args.suite_version or 'latest'}:{args.baseline}:{args.candidate}"
         )
         enqueue_experiment(
             database,
@@ -1661,6 +1696,88 @@ def _research_v2_command(args: argparse.Namespace) -> int:
         database.dispose()
 
 
+def _premarket_command(args: argparse.Namespace) -> int:
+    settings = Settings()
+    try:
+        if args.premarket_command == "prepare":
+            job_dir = prepare_premarket_run(settings, snapshot_path=args.snapshot)
+            _print_json(
+                {
+                    "status": "awaiting_draft",
+                    "job_dir": str(job_dir),
+                    "drafts_file": str(job_dir / "drafts.json"),
+                }
+            )
+            return 0
+        if args.premarket_command == "finalize":
+            forecast = finalize_premarket_run(settings, job_dir=args.job_dir)
+            _print_json(
+                {
+                    "status": "completed",
+                    "run_id": forecast.run_id,
+                    "forecast_hash": forecast.content_hash,
+                    "forecast_session": forecast.forecast_session.isoformat(),
+                    "target_session": forecast.target_session.isoformat(),
+                    "direction": forecast.direction,
+                }
+            )
+            return 0
+        if args.premarket_command == "evaluate":
+            evaluation = evaluate_premarket_run(
+                settings,
+                job_dir=args.job_dir,
+                outcome_path=args.outcome,
+            )
+            _print_json(
+                {
+                    "status": "evaluated",
+                    "forecast_hash": evaluation.forecast_hash,
+                    "outcome_hash": evaluation.outcome_hash,
+                    "actual_label": evaluation.actual_label,
+                    "direction_correct": evaluation.direction_correct,
+                    "brier_score": evaluation.brier_score,
+                    "evaluation_hash": evaluation.content_hash,
+                }
+            )
+            return 0
+        brief = build_premarket_brief(
+            settings,
+            job_dir=args.job_dir,
+            title=args.title,
+        )
+        if args.premarket_command == "brief":
+            _print_json(
+                {
+                    "status": "rendered",
+                    "forecast_hash": brief.forecast_hash,
+                    "content_hash": brief.content_hash,
+                    "text": brief.text,
+                }
+            )
+            return 0
+        if args.premarket_command == "notify":
+            config = load_feishu_owner_config(
+                args.env_file,
+                env_prefix=args.env_prefix,
+            )
+            result = publish_premarket_brief(
+                brief,
+                config,
+                state_root=args.state_root,
+            )
+            _print_json(
+                {
+                    "status": result.status,
+                    "forecast_hash": result.forecast_hash,
+                    "delivery_marker": str(result.marker),
+                }
+            )
+            return 0
+        raise PremarketServiceError("unsupported premarket command")
+    except (DailyBriefV2Error, PremarketServiceError, ValidationError) as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def _database_command(args: argparse.Namespace) -> int:
     settings = Settings()
     database_url = args.database_url or settings.database_url
@@ -1748,17 +1865,13 @@ def _read_private_bytes(
         with os.fdopen(descriptor, "rb", closefd=True) as stream:
             before = os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode):
-                raise SystemExit(
-                    f"{label} file must be a regular, non-symlink file"
-                )
+                raise SystemExit(f"{label} file must be a regular, non-symlink file")
             if before.st_size > maximum_bytes:
                 raise SystemExit(f"{label} file exceeds {maximum_bytes} bytes")
             content = stream.read(maximum_bytes + 1)
             after = os.fstat(stream.fileno())
     except OSError as exc:
-        raise SystemExit(
-            f"{label} file must be a readable, regular, non-symlink file"
-        ) from exc
+        raise SystemExit(f"{label} file must be a readable, regular, non-symlink file") from exc
     if len(content) > maximum_bytes:
         raise SystemExit(f"{label} file exceeds {maximum_bytes} bytes")
     if (
@@ -1868,9 +1981,7 @@ def _infer_handoff_mode(job_dir: Path) -> Literal["demo", "live"]:
         payload = json.loads((job_dir / "input.json").read_text(encoding="utf-8"))
         mode = payload["mode"]
     except (OSError, KeyError, json.JSONDecodeError, TypeError) as exc:
-        raise SystemExit(
-            f"cannot infer handoff mode; pass --mode explicitly: {exc}"
-        ) from exc
+        raise SystemExit(f"cannot infer handoff mode; pass --mode explicitly: {exc}") from exc
     if mode not in {"demo", "live"}:
         raise SystemExit("input.json mode must be demo or live")
     return mode
