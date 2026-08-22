@@ -147,13 +147,27 @@ def prepare_research_run(
     )
     now = datetime.now(ZoneInfo(settings.timezone))
     with database.session_factory() as session:
-        existing = session.scalar(
-            select(ResearchRunV2).where(ResearchRunV2.input_hash == input_hash)
-        )
-        if existing is not None:
-            if existing.status == "failed":
-                raise ResearchV2Error("the frozen v2 input already belongs to a failed run")
-            return _validated_job_dir(settings, existing.id, must_exist=True)
+        existing = session.scalars(
+            select(ResearchRunV2)
+            .where(
+                ResearchRunV2.program_hash == program.content_hash,
+                ResearchRunV2.mode == mode,
+                ResearchRunV2.anchor_date == snapshot.base_session,
+            )
+            .order_by(ResearchRunV2.prepared_at, ResearchRunV2.id)
+        ).all()
+        if len(existing) > 1:
+            raise ResearchV2Error(
+                "multiple frozen v2 runs already exist for the same program, mode, "
+                "and anchor date"
+            )
+        if existing:
+            frozen = existing[0]
+            if frozen.status == "failed":
+                raise ResearchV2Error(
+                    "the v2 anchor date already belongs to a failed frozen run"
+                )
+            return _validated_job_dir(settings, frozen.id, must_exist=True)
         row = ResearchRunV2(
             id=str(uuid4()),
             schema_version=RESEARCH_RUN_SCHEMA_V2,
@@ -343,12 +357,13 @@ def _finalize_research_run_attempt(
     now: datetime | None,
 ) -> ResearchRunV2:
     job_dir = _validated_explicit_job_dir(settings, job_dir)
-    request = _read_model(job_dir / "input.json", CodexHandoffRequestV3)
     drafts_path = job_dir / "drafts.json"
     raw_drafts = _safe_read(drafts_path)
-    bundle = CodexDraftBundleV3.model_validate_json(raw_drafts)
-    if bundle.run_id != request.run_id or bundle.request_hash != request.request_hash:
-        raise ResearchV2Error("draft bundle does not bind the frozen request")
+    request, bundle = validate_research_draft_bundle(
+        settings,
+        job_dir=job_dir,
+        raw_drafts=raw_drafts,
+    )
     with database.session_factory() as session:
         persisted_run = session.get(ResearchRunV2, request.run_id)
         if persisted_run is None:
@@ -376,37 +391,7 @@ def _finalize_research_run_attempt(
     codex_assignments = [
         item for item in request.assignments if item.producer == "codex"
     ]
-    expected = {item.assignment_id for item in codex_assignments}
-    if set(by_assignment) != expected:
-        raise ResearchV2Error("draft bundle must contain exactly every assignment")
-    wiki = FrozenWikiCatalog(request.frozen_wiki)
-    evidence_ids = {item.item_id for item in request.snapshot.items}
     assignments = {item.assignment_id: item for item in request.assignments}
-    for record in bundle.drafts:
-        assignment = assignments[record.assignment_id]
-        draft = record.draft
-        if (
-            draft.target_id != assignment.target_id
-            or draft.signal_kind != assignment.signal_kind
-            or draft.natural_horizon != assignment.natural_horizon
-            or draft.decision_horizon != assignment.decision_horizon
-        ):
-            raise ResearchV2Error(f"draft identity mismatch for {assignment.assignment_id}")
-        if not set(draft.evidence_item_ids).issubset(evidence_ids):
-            raise ResearchV2Error("draft references evidence outside the frozen snapshot")
-        if draft.state_available != assignment.state_available:
-            raise ResearchV2Error("draft changed the host-derived natural-state availability")
-        entry = wiki.get(assignment.wiki_entry_id, include_body=False)
-        if (
-            entry is None
-            or draft.wiki_entry_id != assignment.wiki_entry_id
-            or draft.wiki_version != assignment.wiki_version
-            or draft.wiki_section != assignment.wiki_section
-            or draft.wiki_content_hash != assignment.wiki_content_hash
-            or draft.wiki_version != entry.version
-            or draft.wiki_content_hash != entry.content_hash
-        ):
-            raise ResearchV2Error("draft changed the frozen Wiki identity")
 
     now = accepted_at
     recorder = TraceRecorder(database, settings)
@@ -2973,6 +2958,63 @@ def _close_failed_finalize_trace(
         error=error,
         attributes={"handoff_stage": "finalize"},
     )
+
+
+def validate_research_draft_bundle(
+    settings: Settings,
+    *,
+    job_dir: Path,
+    raw_drafts: bytes,
+) -> tuple[CodexHandoffRequestV3, CodexDraftBundleV3]:
+    """Validate an external v2 draft before an operator publishes it.
+
+    The check is intentionally persistence-free so a dispatcher can validate a
+    candidate in private staging, then create the sole authorized
+    ``drafts.json`` file without leaving a rejected bundle in the handoff.
+    Finalize repeats this exact check from the published bytes.
+    """
+
+    job_dir = _validated_explicit_job_dir(settings, job_dir)
+    request = _read_model(job_dir / "input.json", CodexHandoffRequestV3)
+    bundle = CodexDraftBundleV3.model_validate_json(raw_drafts)
+    if bundle.run_id != request.run_id or bundle.request_hash != request.request_hash:
+        raise ResearchV2Error("draft bundle does not bind the frozen request")
+    by_assignment = {item.assignment_id: item for item in bundle.drafts}
+    codex_assignments = [
+        item for item in request.assignments if item.producer == "codex"
+    ]
+    expected = {item.assignment_id for item in codex_assignments}
+    if set(by_assignment) != expected:
+        raise ResearchV2Error("draft bundle must contain exactly every assignment")
+    wiki = FrozenWikiCatalog(request.frozen_wiki)
+    evidence_ids = {item.item_id for item in request.snapshot.items}
+    assignments = {item.assignment_id: item for item in request.assignments}
+    for record in bundle.drafts:
+        assignment = assignments[record.assignment_id]
+        draft = record.draft
+        if (
+            draft.target_id != assignment.target_id
+            or draft.signal_kind != assignment.signal_kind
+            or draft.natural_horizon != assignment.natural_horizon
+            or draft.decision_horizon != assignment.decision_horizon
+        ):
+            raise ResearchV2Error(f"draft identity mismatch for {assignment.assignment_id}")
+        if not set(draft.evidence_item_ids).issubset(evidence_ids):
+            raise ResearchV2Error("draft references evidence outside the frozen snapshot")
+        if draft.state_available != assignment.state_available:
+            raise ResearchV2Error("draft changed the host-derived natural-state availability")
+        entry = wiki.get(assignment.wiki_entry_id, include_body=False)
+        if (
+            entry is None
+            or draft.wiki_entry_id != assignment.wiki_entry_id
+            or draft.wiki_version != assignment.wiki_version
+            or draft.wiki_section != assignment.wiki_section
+            or draft.wiki_content_hash != assignment.wiki_content_hash
+            or draft.wiki_version != entry.version
+            or draft.wiki_content_hash != entry.content_hash
+        ):
+            raise ResearchV2Error("draft changed the frozen Wiki identity")
+    return request, bundle
 
 
 def _atomic_write(path: Path, data: bytes) -> None:

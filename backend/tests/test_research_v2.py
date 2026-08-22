@@ -18,6 +18,7 @@ from app.models import (
     AgentTraceArtifactLink,
     AgentTraceSpan,
     ForecastV2,
+    ResearchRunV2,
 )
 from app.research_v2 import (
     CSI300,
@@ -54,6 +55,7 @@ from app.services.research_v2 import (
     finalize_reasoning_review,
     finalize_research_run,
     prepare_research_run,
+    validate_research_draft_bundle,
 )
 from app.services.schema_readiness import upgrade_database
 from app.services.snapshot import LiveEvidenceRequiredError
@@ -250,6 +252,76 @@ def test_prepare_finalize_creates_d1_and_nonoverlapping_w1_with_deterministic_ci
             and item["signal_kind"] in {"strategy_forecast", "decision_forecast"}
             for item in next_request["assignments"]
         )
+    finally:
+        database.dispose()
+
+
+def test_prepare_reuses_first_frozen_run_for_same_anchor_date(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    upgrade_database(settings.database_url)
+    _write_wiki(settings.wiki_path)
+    first_snapshot = _snapshot()
+    first_path = tmp_path / "first.json"
+    first_path.write_text(first_snapshot.model_dump_json(), encoding="utf-8")
+
+    revised_body = first_snapshot.model_dump(mode="python", exclude={"content_hash"})
+    revised_body["items"][0]["summary"] = "A later same-day source revision."
+    revised_snapshot = seal_evidence_snapshot(
+        EvidenceSnapshotBodyV2.model_validate(revised_body)
+    )
+    assert revised_snapshot.content_hash != first_snapshot.content_hash
+    revised_path = tmp_path / "revised.json"
+    revised_path.write_text(revised_snapshot.model_dump_json(), encoding="utf-8")
+
+    database = Database(settings.database_url)
+    try:
+        first_job = prepare_research_run(
+            database,
+            settings,
+            snapshot_path=first_path,
+            mode="demo",
+        )
+        repeated_job = prepare_research_run(
+            database,
+            settings,
+            snapshot_path=revised_path,
+            mode="demo",
+        )
+
+        assert repeated_job == first_job
+        with database.session_factory() as session:
+            runs = session.scalars(select(ResearchRunV2)).all()
+            assert len(runs) == 1
+            assert runs[0].snapshot_hash == first_snapshot.content_hash
+    finally:
+        database.dispose()
+
+
+def test_external_dispatcher_can_validate_before_publishing_drafts(
+    tmp_path: Path,
+) -> None:
+    settings, database, job_dir, _request = _prepared_demo_job(tmp_path)
+    drafts_path = job_dir / "drafts.json"
+    raw_drafts = drafts_path.read_bytes()
+    drafts_path.unlink()
+    try:
+        request, bundle = validate_research_draft_bundle(
+            settings,
+            job_dir=job_dir,
+            raw_drafts=raw_drafts,
+        )
+        assert request.run_id == bundle.run_id
+        assert not drafts_path.exists()
+
+        tampered = json.loads(raw_drafts)
+        tampered["drafts"][0]["draft"]["evidence_item_ids"] = ["outside-snapshot"]
+        with pytest.raises(ResearchV2Error, match="outside the frozen snapshot"):
+            validate_research_draft_bundle(
+                settings,
+                job_dir=job_dir,
+                raw_drafts=json.dumps(tampered).encode(),
+            )
+        assert not drafts_path.exists()
     finally:
         database.dispose()
 

@@ -191,6 +191,10 @@ data/handoffs/v2/<run-id>/
 ```
 
 Python 冻结 Program、Snapshot、Wiki、历史自然观点、baseline、assignment 和所有 hash。
+同一 `program/mode/anchor_date` 的首次输入一经封签，后续重试即使拿到更新后的同日
+Snapshot，也只返回原 job；不会创建第二个预测身份或把晚到信息混入已经开始的前瞻任务。
+如果历史数据库已经存在多个同锚点 run，prepare 会失败关闭，要求运维先审计，而不会猜测
+应使用哪一个。
 预测 Codex 任务固定使用 `gpt-5.6-sol / high`，只读 `input.json` 和模板，并且只能写：
 
 ```text
@@ -199,6 +203,8 @@ data/handoffs/v2/<run-id>/drafts.json
 
 不要让 Codex 修改 input、模板、instruction、数据库、Wiki 或上游数据。handoff root 的
 symlink、越界路径、缺失 assignment、额外证据引用、身份漂移或 Wiki hash 漂移都会失败。
+外部 dispatcher 可以先对内存中的候选草稿调用与 Finalize 相同的公共校验，再以不覆盖方式
+创建 `drafts.json`；Finalize 会从最终落盘字节重复全部校验。
 
 ### 6.2 Finalize
 

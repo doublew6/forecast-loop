@@ -54,6 +54,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Focused-v2 prepare now reuses the first frozen run for the same program,
+  mode, and anchor date, while external dispatchers can run the exact public
+  draft validation before publishing `drafts.json` without overwriting it.
 - Audit-bundle and job-execution readers now fail closed when handoff receipt
   protocol, provider, or retry metadata is version-inconsistent.
 - Source archive creation now audits the selected Git revision with the
