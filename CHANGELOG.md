@@ -54,6 +54,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Focused-v2 draft instructions now state that every non-abstaining D1 impact
+  requires a non-empty `transmission_chain`, matching the fail-closed schema
+  validator before an external dispatcher publishes `drafts.json`.
 - Focused-v2 prepare now reuses the first frozen run for the same program,
   mode, and anchor date, while external dispatchers can run the exact public
   draft validation before publishing `drafts.json` without overwriting it.

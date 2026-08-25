@@ -326,6 +326,34 @@ def test_external_dispatcher_can_validate_before_publishing_drafts(
         database.dispose()
 
 
+def test_prepare_instructions_match_non_abstaining_d1_impact_contract(
+    tmp_path: Path,
+) -> None:
+    _settings_value, database, job_dir, request = _prepared_demo_job(tmp_path)
+    try:
+        instructions = " ".join((job_dir / "INSTRUCTIONS.md").read_text().split())
+        assert (
+            "Every non-abstaining D1 impact must provide a non-empty "
+            "`transmission_chain`; only an explicit no-impact abstention may leave "
+            "that list empty."
+        ) in instructions
+
+        assignment = next(
+            item
+            for item in request["assignments"]
+            if item["signal_kind"] == "d1_impact" and item["state_available"]
+        )
+        invalid_draft = _draft_for_assignment(assignment)
+        invalid_draft["transmission_chain"] = []
+        with pytest.raises(
+            ValidationError,
+            match="non-abstaining D1 impact requires a transmission chain",
+        ):
+            AgentSignalDraftV2.model_validate(invalid_draft)
+    finally:
+        database.dispose()
+
+
 def test_finalize_rejects_target_day_and_recovers_missing_receipt(tmp_path: Path) -> None:
     settings, database, job_dir, _request = _prepared_demo_job(tmp_path)
     try:
