@@ -205,6 +205,9 @@ data/handoffs/v2/<run-id>/drafts.json
 symlink、越界路径、缺失 assignment、额外证据引用、身份漂移或 Wiki hash 漂移都会失败。
 外部 dispatcher 可以先对内存中的候选草稿调用与 Finalize 相同的公共校验，再以不覆盖方式
 创建 `drafts.json`；Finalize 会从最终落盘字节重复全部校验。
+`d1_impact` 的非弃权草稿必须提供非空 `transmission_chain`；只有显式 no-impact abstention
+可以留空。生成的 `INSTRUCTIONS.md` 会复述这条 validator 合同，避免候选草稿到发布时才
+因缺失传导链而失败。
 
 ### 6.2 Finalize
 

@@ -2263,8 +2263,9 @@ Codex-produced assignment in dependency order. Do not draft assignments whose
 producer is `deterministic`, and do not add or remove assignments. Use only frozen
 evidence IDs, context signals, dependency drafts and the exact Wiki identity named
 in each assignment. Risk Critic must not cast a direction vote and must declare
-risk_severity. An unavailable natural state must produce an explicit no-impact
-abstention.
+risk_severity. Every non-abstaining D1 impact must provide a non-empty
+`transmission_chain`; only an explicit no-impact abstention may leave that list
+empty. An unavailable natural state must produce an explicit no-impact abstention.
 
 The request is sealed by `{request.request_hash}`. Codex may write only
 `drafts.json`; Python validates, aggregates, scores and persists every result.
