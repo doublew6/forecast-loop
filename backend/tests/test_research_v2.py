@@ -326,6 +326,66 @@ def test_external_dispatcher_can_validate_before_publishing_drafts(
         database.dispose()
 
 
+def test_external_dispatcher_rejects_duplicate_assignment_before_publishing(
+    tmp_path: Path,
+) -> None:
+    settings, database, job_dir, _request = _prepared_demo_job(tmp_path)
+    drafts_path = job_dir / "drafts.json"
+    payload = json.loads(drafts_path.read_bytes())
+    duplicate = json.loads(json.dumps(payload["drafts"][0]))
+    duplicate["draft"]["rationale"] = "A conflicting duplicate must not be accepted."
+    payload["drafts"].append(duplicate)
+    raw_drafts = json.dumps(payload).encode()
+    drafts_path.unlink()
+    try:
+        with pytest.raises(ValidationError, match="draft assignment IDs must be unique"):
+            validate_research_draft_bundle(
+                settings,
+                job_dir=job_dir,
+                raw_drafts=raw_drafts,
+            )
+        assert not drafts_path.exists()
+    finally:
+        database.dispose()
+
+
+def test_finalize_rejects_duplicate_assignment_without_persisting(
+    tmp_path: Path,
+) -> None:
+    settings, database, job_dir, request = _prepared_demo_job(tmp_path)
+    drafts_path = job_dir / "drafts.json"
+    payload = json.loads(drafts_path.read_bytes())
+    duplicate = json.loads(json.dumps(payload["drafts"][0]))
+    duplicate["draft"]["rationale"] = "A conflicting duplicate must not be accepted."
+    payload["drafts"].append(duplicate)
+    raw_drafts = json.dumps(payload).encode()
+    drafts_path.write_bytes(raw_drafts)
+    try:
+        with pytest.raises(ValidationError, match="draft assignment IDs must be unique"):
+            finalize_research_run(
+                database,
+                settings,
+                job_dir=job_dir,
+                now=datetime(2026, 8, 12, 20, 30, tzinfo=TZ),
+            )
+
+        with database.session_factory() as session:
+            run = session.get(ResearchRunV2, request["run_id"])
+            assert run is not None and run.status == "awaiting_draft"
+            assert session.scalars(select(AgentSignalV2Record)).all() == []
+            assert session.scalars(select(ForecastV2)).all() == []
+            attempts = session.scalars(
+                select(AgentTrace).order_by(AgentTrace.attempt_number)
+            ).all()
+            assert [(item.attempt_number, item.status) for item in attempts] == [
+                (1, "failed")
+            ]
+        assert not (job_dir / "receipt.json").exists()
+        assert drafts_path.read_bytes() == raw_drafts
+    finally:
+        database.dispose()
+
+
 def test_prepare_instructions_match_non_abstaining_d1_impact_contract(
     tmp_path: Path,
 ) -> None:

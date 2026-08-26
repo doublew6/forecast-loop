@@ -387,6 +387,8 @@ def _finalize_research_run_attempt(
             "research finalize cutoff has passed; no forecast may be accepted on or "
             "after the earliest target session"
         )
+    # validate_research_draft_bundle guarantees one record per Codex assignment,
+    # so this lookup cannot silently overwrite a duplicate record.
     by_assignment = {item.assignment_id: item for item in bundle.drafts}
     codex_assignments = [
         item for item in request.assignments if item.producer == "codex"
@@ -2980,12 +2982,14 @@ def validate_research_draft_bundle(
     bundle = CodexDraftBundleV3.model_validate_json(raw_drafts)
     if bundle.run_id != request.run_id or bundle.request_hash != request.request_hash:
         raise ResearchV2Error("draft bundle does not bind the frozen request")
-    by_assignment = {item.assignment_id: item for item in bundle.drafts}
+    # CodexDraftBundleV3 rejects duplicate assignment IDs before this
+    # request-bound check rejects missing or unexpected assignments.
+    draft_assignment_ids = {item.assignment_id for item in bundle.drafts}
     codex_assignments = [
         item for item in request.assignments if item.producer == "codex"
     ]
     expected = {item.assignment_id for item in codex_assignments}
-    if set(by_assignment) != expected:
+    if draft_assignment_ids != expected:
         raise ResearchV2Error("draft bundle must contain exactly every assignment")
     wiki = FrozenWikiCatalog(request.frozen_wiki)
     evidence_ids = {item.item_id for item in request.snapshot.items}
