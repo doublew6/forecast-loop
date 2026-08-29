@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
+import os
+import stat
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import app.services.premarket as premarket_service
 import pytest
 from app.config import Settings
 from app.premarket import (
@@ -26,6 +34,7 @@ from app.premarket import (
     SourceTierV1,
     TradingCalendarStampV1,
     build_premarket_handoff,
+    canonical_json,
     content_hash,
     evaluate_premarket_forecast,
     finalize_premarket_forecast,
@@ -33,6 +42,7 @@ from app.premarket import (
     seal_premarket_snapshot,
 )
 from app.services.premarket import (
+    PremarketServiceError,
     build_premarket_brief,
     evaluate_premarket_run,
     finalize_premarket_run,
@@ -214,6 +224,30 @@ def _draft_bundle(handoff) -> PremarketDraftBundleV1:
     )
 
 
+def _prepared_service_job(
+    tmp_path: Path,
+    *,
+    handoff_root: Path | None = None,
+) -> tuple[Settings, Path]:
+    snapshot = seal_premarket_snapshot(_snapshot_body())
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_bytes(canonical_json(snapshot))
+    settings = Settings(handoff_root=handoff_root or tmp_path / "handoffs")
+    prepared_at = datetime(2026, 8, 18, 9, 12, tzinfo=ZONE)
+    job_dir = prepare_premarket_run(
+        settings,
+        snapshot_path=snapshot_path,
+        now=prepared_at,
+    )
+    handoff = build_premarket_handoff(
+        run_id=job_dir.name,
+        snapshot=snapshot,
+        prepared_at=prepared_at,
+    )
+    (job_dir / "drafts.json").write_bytes(canonical_json(_draft_bundle(handoff)))
+    return settings, job_dir
+
+
 def test_program_has_distinct_open_to_open_identity() -> None:
     assert DEFAULT_PREMARKET_PROGRAM_V1.target_id == CSI1000_OPEN_TO_OPEN_D1_TARGET
     assert DEFAULT_PREMARKET_PROGRAM_V1.target_window == "open_to_open"
@@ -327,6 +361,442 @@ def test_open_to_open_forecast_and_evaluation_form_a_sealed_episode() -> None:
     assert evaluation.actual_label == "up"
     assert evaluation.direction_correct is True
     assert math.isclose(evaluation.realized_return, 0.02)
+
+
+def test_finalize_recovers_missing_receipt_from_verified_forecast(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    forecast = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    forecast_bytes = (job_dir / "forecast.json").read_bytes()
+    receipt_bytes = (job_dir / "receipt.json").read_bytes()
+    (job_dir / "receipt.json").unlink()
+
+    recovered = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 21, tzinfo=ZONE),
+    )
+
+    assert recovered.content_hash == forecast.content_hash
+    assert (job_dir / "forecast.json").read_bytes() == forecast_bytes
+    assert (job_dir / "receipt.json").read_bytes() == receipt_bytes
+
+    validated = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 22, tzinfo=ZONE),
+    )
+    assert validated.content_hash == forecast.content_hash
+    assert (job_dir / "forecast.json").read_bytes() == forecast_bytes
+    assert (job_dir / "receipt.json").read_bytes() == receipt_bytes
+
+
+def test_finalize_rejects_receipt_without_forecast(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    (job_dir / "forecast.json").unlink()
+
+    with pytest.raises(PremarketServiceError, match="receipt exists without forecast"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 21, tzinfo=ZONE),
+        )
+
+
+def test_finalize_rejects_self_consistent_receipt_for_other_forecast(
+    tmp_path: Path,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    receipt_path = job_dir / "receipt.json"
+    receipt = json.loads(receipt_path.read_bytes())
+    receipt["forecast_hash"] = "0" * 64
+    receipt.pop("receipt_hash")
+    receipt["receipt_hash"] = hashlib.sha256(canonical_json(receipt)).hexdigest()
+    receipt_path.unlink()
+    receipt_path.write_bytes(canonical_json(receipt))
+
+    with pytest.raises(PremarketServiceError, match="does not match forecast"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 21, tzinfo=ZONE),
+        )
+
+
+def test_finalize_rejects_resealed_forecast_that_conflicts_with_drafts(
+    tmp_path: Path,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    forecast_path = job_dir / "forecast.json"
+    forecast = json.loads(forecast_path.read_bytes())
+    forecast["rationale"] = "Tampered but internally resealed rationale."
+    forecast["content_hash"] = content_hash(forecast)
+    forecast_path.unlink()
+    forecast_path.write_bytes(canonical_json(forecast))
+
+    with pytest.raises(PremarketServiceError, match="forecast has different content"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 21, tzinfo=ZONE),
+        )
+
+
+def test_finalize_does_not_recover_missing_receipt_at_deadline(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 23, 59, tzinfo=ZONE),
+    )
+    (job_dir / "receipt.json").unlink()
+
+    with pytest.raises(PremarketServiceError, match="deadline"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 24, tzinfo=ZONE),
+        )
+    assert not (job_dir / "receipt.json").exists()
+
+
+def test_finalize_normalizes_utc_time_for_fresh_and_recovered_receipt(
+    tmp_path: Path,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    forecast = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 1, 20, tzinfo=ZoneInfo("UTC")),
+    )
+
+    assert forecast.created_at == datetime(2026, 8, 18, 9, 20, tzinfo=ZONE)
+    receipt_bytes = (job_dir / "receipt.json").read_bytes()
+    (job_dir / "receipt.json").unlink()
+    recovered = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 1, 21, tzinfo=ZoneInfo("UTC")),
+    )
+
+    assert recovered.content_hash == forecast.content_hash
+    assert (job_dir / "receipt.json").read_bytes() == receipt_bytes
+
+
+def test_finalize_binds_handoff_run_id_to_job_directory(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    renamed = job_dir.with_name("different-job-directory")
+    job_dir.rename(renamed)
+
+    with pytest.raises(PremarketServiceError, match="directory does not match"):
+        finalize_premarket_run(
+            settings,
+            job_dir=renamed,
+            now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+        )
+
+
+def test_finalize_serializes_concurrent_identical_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    first_receipt_started = threading.Event()
+    release_first_receipt = threading.Event()
+    unexpected_second_receipt = threading.Event()
+    second_clock_called = threading.Event()
+    receipt_calls = 0
+    receipt_calls_lock = threading.Lock()
+    original_builder = premarket_service._build_premarket_receipt
+
+    def controlled_builder(forecast: PremarketForecastV1):
+        nonlocal receipt_calls
+        with receipt_calls_lock:
+            receipt_calls += 1
+            call_number = receipt_calls
+        if call_number == 1:
+            first_receipt_started.set()
+            assert release_first_receipt.wait(timeout=2)
+        elif not release_first_receipt.is_set():
+            unexpected_second_receipt.set()
+        return original_builder(forecast)
+
+    monkeypatch.setattr(
+        premarket_service,
+        "_build_premarket_receipt",
+        controlled_builder,
+    )
+    def second_clock() -> datetime:
+        second_clock_called.set()
+        return datetime(2026, 8, 18, 9, 20, 1, tzinfo=ZONE)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            finalize_premarket_run,
+            settings,
+            job_dir=job_dir,
+            clock=lambda: datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+        )
+        assert first_receipt_started.wait(timeout=2)
+        second = pool.submit(
+            finalize_premarket_run,
+            settings,
+            job_dir=job_dir,
+            clock=second_clock,
+        )
+        assert not second_clock_called.wait(timeout=0.2)
+        assert not unexpected_second_receipt.wait(timeout=0.2)
+        release_first_receipt.set()
+        first_forecast = first.result(timeout=2)
+        second_forecast = second.result(timeout=2)
+
+    assert first_forecast.content_hash == second_forecast.content_hash
+    assert (job_dir / "forecast.json").is_file()
+    assert (job_dir / "receipt.json").is_file()
+
+
+def test_finalize_resamples_clock_after_waiting_for_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    first_receipt_started = threading.Event()
+    release_first_receipt = threading.Event()
+    second_clock_called = threading.Event()
+    original_builder = premarket_service._build_premarket_receipt
+    builder_calls = 0
+    builder_lock = threading.Lock()
+
+    def blocking_builder(forecast: PremarketForecastV1):
+        nonlocal builder_calls
+        with builder_lock:
+            builder_calls += 1
+            call_number = builder_calls
+        if call_number == 1:
+            first_receipt_started.set()
+            assert release_first_receipt.wait(timeout=2)
+        return original_builder(forecast)
+
+    def deadline_clock() -> datetime:
+        second_clock_called.set()
+        return datetime(2026, 8, 18, 9, 24, tzinfo=ZONE)
+
+    monkeypatch.setattr(
+        premarket_service,
+        "_build_premarket_receipt",
+        blocking_builder,
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            finalize_premarket_run,
+            settings,
+            job_dir=job_dir,
+            clock=lambda: datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+        )
+        assert first_receipt_started.wait(timeout=2)
+        second = pool.submit(
+            finalize_premarket_run,
+            settings,
+            job_dir=job_dir,
+            clock=deadline_clock,
+        )
+        assert not second_clock_called.wait(timeout=0.2)
+        release_first_receipt.set()
+        first.result(timeout=2)
+        with pytest.raises(PremarketServiceError, match="deadline"):
+            second.result(timeout=2)
+
+
+def test_finalize_rechecks_deadline_before_receipt_write(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    sampled = iter(
+        (
+            datetime(2026, 8, 18, 9, 23, 59, tzinfo=ZONE),
+            datetime(2026, 8, 18, 9, 23, 59, tzinfo=ZONE),
+            datetime(2026, 8, 18, 9, 24, tzinfo=ZONE),
+        )
+    )
+
+    with pytest.raises(PremarketServiceError, match="deadline"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            clock=lambda: next(sampled),
+        )
+
+    assert (job_dir / "forecast.json").is_file()
+    assert not (job_dir / "receipt.json").exists()
+
+
+def test_finalize_rejects_symlinked_lock_file(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    outside = tmp_path / "outside-lock"
+    outside.write_text("do not touch", encoding="utf-8")
+    (job_dir / ".finalize.lock").symlink_to(outside)
+
+    with pytest.raises(PremarketServiceError, match="locked safely"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+        )
+
+    assert outside.read_text(encoding="utf-8") == "do not touch"
+    assert not (job_dir / "forecast.json").exists()
+
+
+def test_finalize_rejects_ancestor_symlink_rebinding(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    configured_root = settings.handoff_root
+    relocated_root = tmp_path / "relocated-handoffs"
+    configured_root.rename(relocated_root)
+    configured_root.symlink_to(relocated_root, target_is_directory=True)
+
+    with pytest.raises(PremarketServiceError, match="unavailable"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+        )
+
+    relocated_job = relocated_root / "premarket" / job_dir.name
+    assert not (relocated_job / "forecast.json").exists()
+    assert not (relocated_job / "receipt.json").exists()
+
+
+def test_finalize_accepts_stable_symlink_alias_above_configured_root(
+    tmp_path: Path,
+) -> None:
+    physical = tmp_path / "physical"
+    physical.mkdir()
+    alias = tmp_path / "stable-alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    settings, job_dir = _prepared_service_job(
+        tmp_path,
+        handoff_root=alias / "handoffs",
+    )
+
+    forecast = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+
+    assert forecast.run_id == job_dir.name
+    assert (job_dir / "forecast.json").is_file()
+    assert (job_dir / "receipt.json").is_file()
+
+
+def test_finalize_rejects_self_referential_job_symlink(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    relocated_job = job_dir.with_name(f"{job_dir.name}-relocated")
+    job_dir.rename(relocated_job)
+    job_dir.symlink_to(job_dir.name, target_is_directory=True)
+
+    with pytest.raises(PremarketServiceError, match="unavailable"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+        )
+
+    assert not (relocated_job / "forecast.json").exists()
+
+
+def test_finalize_rejects_fifo_artifact_without_blocking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    drafts_path = job_dir / "drafts.json"
+    drafts_path.unlink()
+    os.mkfifo(drafts_path, mode=0o600)
+    real_open = os.open
+
+    def guarded_open(path, flags, *args, **kwargs):
+        if path == "drafts.json":
+            assert flags & os.O_NONBLOCK
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(premarket_service.os, "open", guarded_open)
+
+    with pytest.raises(PremarketServiceError, match="invalid file size"):
+        finalize_premarket_run(
+            settings,
+            job_dir=job_dir,
+            now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+        )
+
+
+def test_fd_atomic_write_cleans_temporary_file_after_fsync_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    real_fsync = os.fsync
+
+    def failing_file_fsync(descriptor: int) -> None:
+        if stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError("synthetic file fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(premarket_service.os, "fsync", failing_file_fsync)
+    try:
+        with pytest.raises(PremarketServiceError, match="unable to write"):
+            premarket_service._atomic_write_at(
+                directory_fd,
+                "artifact.json",
+                b"{}\n",
+                mode=0o400,
+            )
+    finally:
+        os.close(directory_fd)
+
+    assert not (tmp_path / "artifact.json").exists()
+    assert list(tmp_path.glob(".artifact.json.*")) == []
+
+
+def test_fd_atomic_write_cleans_temporary_file_after_link_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+
+    def failing_link(*_args, **_kwargs) -> None:
+        raise OSError("synthetic link failure")
+
+    monkeypatch.setattr(premarket_service.os, "link", failing_link)
+    try:
+        with pytest.raises(PremarketServiceError, match="unable to publish"):
+            premarket_service._atomic_write_at(
+                directory_fd,
+                "artifact.json",
+                b"{}\n",
+                mode=0o400,
+            )
+    finally:
+        os.close(directory_fd)
+
+    assert not (tmp_path / "artifact.json").exists()
+    assert list(tmp_path.glob(".artifact.json.*")) == []
 
 
 def test_file_first_service_prepares_finalizes_and_renders_brief(tmp_path) -> None:

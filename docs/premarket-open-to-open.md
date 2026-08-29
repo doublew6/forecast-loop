@@ -75,7 +75,10 @@ make premarket-notify ARGS="/absolute/job/path --env-file /absolute/owner.env"
 
 `prepare` 写入只读的 `input.json`、`drafts.template.json` 和 `INSTRUCTIONS.md`；
 模型只能创建 `drafts.json`。`finalize` 验证时间、哈希、assignment、Agent 证据权限、
-Wiki identity 和 09:24 deadline，然后写入不可覆盖的 `forecast.json` 与 `receipt.json`。
+Wiki identity 和 09:24 deadline，在排他锁内通过目录 fd 原子写入并同步不可覆盖的
+`forecast.json` 与 `receipt.json`。若进程在两次写入之间中断，09:24 前的重试只有在
+冻结输入和草稿能够精确复现已有 forecast 时才补写 receipt；receipt-only、冲突或篡改
+状态一律拒绝。
 飞书发送按预测交易日和接收者幂等；不同内容不能静默覆盖已发送结果。
 日报反馈只选择 `target_session < 当前 forecast_session` 的最近完整评价，因此盘前发送
 时不会把当天尚未出现的开盘价当成真实结果。没有合格历史时只发送当期预测。
