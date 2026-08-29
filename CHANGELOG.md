@@ -54,6 +54,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Interrupted pre-market finalization now recovers a missing receipt only from
+  the verified forecast and frozen drafts before the exclusive 09:24 deadline,
+  while receipt-only, conflicting, and tampered artifact states fail closed.
 - Focused-v2 draft instructions now state that every non-abstaining D1 impact
   requires a non-empty `transmission_chain`, matching the fail-closed schema
   validator before an external dispatcher publishes `drafts.json`.

@@ -6,14 +6,19 @@ import fcntl
 import hashlib
 import json
 import os
+import secrets
 import stat
 import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..config import REPOSITORY_ROOT, Settings
 from ..premarket import (
@@ -34,10 +39,43 @@ from .daily_brief_v2 import FeishuOwnerConfig, FeishuOwnerSender
 MAX_JSON_BYTES = 32 * 1024 * 1024
 DEFAULT_PREMARKET_DELIVERY_ROOT = REPOSITORY_ROOT / "data" / "notification-delivery"
 DEFAULT_PREMARKET_TITLE = "forecast-loop｜中证1000盘前预测"
+PREMARKET_RECEIPT_SCHEMA_V1 = "forecast-loop.premarket-receipt/v1"
 
 
 class PremarketServiceError(RuntimeError):
     """Raised when a pre-market file handoff or delivery cannot be trusted."""
+
+
+class _PremarketReceiptBodyV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["forecast-loop.premarket-receipt/v1"] = (
+        PREMARKET_RECEIPT_SCHEMA_V1
+    )
+    run_id: str
+    request_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    forecast_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    completed_at: datetime
+
+    @field_validator("completed_at")
+    @classmethod
+    def require_aware_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("premarket receipt completed_at must be timezone-aware")
+        return value
+
+
+class _PremarketReceiptV1(_PremarketReceiptBodyV1):
+    receipt_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_receipt_hash(self) -> _PremarketReceiptV1:
+        payload = self.model_dump(mode="json", exclude={"receipt_hash"})
+        expected = hashlib.sha256(canonical_json(payload)).hexdigest()
+        if self.receipt_hash != expected:
+            raise ValueError("premarket receipt_hash mismatch")
+        return self
 
 
 @dataclass(frozen=True)
@@ -130,34 +168,133 @@ def finalize_premarket_run(
     *,
     job_dir: Path,
     now: datetime | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> PremarketForecastV1:
-    job_dir = _validated_job_dir(settings, job_dir)
-    handoff = _read_model(job_dir / "input.json", PremarketHandoffV1)
-    drafts = _read_model(job_dir / "drafts.json", PremarketDraftBundleV1)
-    accepted_at = now or datetime.now(ZoneInfo(settings.timezone))
-    forecast = finalize_premarket_forecast(
-        handoff,
-        drafts,
-        accepted_at=accepted_at,
-    )
-    destination = job_dir / "forecast.json"
-    if destination.exists():
-        existing = _read_model(destination, PremarketForecastV1)
-        if existing.content_hash != forecast.content_hash:
-            raise PremarketServiceError("existing premarket forecast has different content")
-        return existing
-    _atomic_write(destination, canonical_json(forecast), mode=0o400)
-    receipt = {
-        "schema_version": "forecast-loop.premarket-receipt/v1",
-        "run_id": forecast.run_id,
-        "request_hash": forecast.request_hash,
-        "snapshot_hash": forecast.snapshot_hash,
-        "forecast_hash": forecast.content_hash,
-        "completed_at": forecast.created_at.isoformat(),
-    }
-    receipt["receipt_hash"] = hashlib.sha256(canonical_json(receipt)).hexdigest()
-    _atomic_write(job_dir / "receipt.json", canonical_json(receipt), mode=0o400)
-    return forecast
+    zone = ZoneInfo(settings.timezone)
+    if now is not None and clock is not None:
+        raise PremarketServiceError("premarket finalization time is ambiguous")
+    with _locked_premarket_job(settings, job_dir) as (resolved, directory_fd):
+        handoff = _read_model_at(
+            directory_fd,
+            "input.json",
+            PremarketHandoffV1,
+        )
+        drafts = _read_model_at(
+            directory_fd,
+            "drafts.json",
+            PremarketDraftBundleV1,
+        )
+        forecast_exists = _artifact_exists_at(directory_fd, "forecast.json")
+        receipt_exists = _artifact_exists_at(directory_fd, "receipt.json")
+        if receipt_exists and not forecast_exists:
+            raise PremarketServiceError("premarket receipt exists without forecast")
+        if handoff.run_id != resolved.name:
+            raise PremarketServiceError(
+                "premarket job directory does not match run_id"
+            )
+        accepted_at = _sample_finalization_time(
+            zone,
+            now=now,
+            clock=clock,
+        )
+
+        candidate = _finalize_forecast_or_error(
+            handoff,
+            drafts,
+            accepted_at=accepted_at,
+        )
+        if forecast_exists:
+            existing = _read_model_at(
+                directory_fd,
+                "forecast.json",
+                PremarketForecastV1,
+            )
+            if existing.created_at > accepted_at:
+                raise PremarketServiceError(
+                    "existing premarket forecast follows the finalization attempt"
+                )
+            reproduced = _finalize_forecast_or_error(
+                handoff,
+                drafts,
+                accepted_at=existing.created_at,
+            )
+            if existing.content_hash != reproduced.content_hash:
+                raise PremarketServiceError(
+                    "existing premarket forecast has different content"
+                )
+            if receipt_exists:
+                _validate_premarket_receipt_at(
+                    directory_fd,
+                    "receipt.json",
+                    existing,
+                )
+                _require_finalization_window_open(
+                    handoff,
+                    _sample_finalization_time(zone, now=now, clock=clock),
+                )
+                return existing
+            receipt = _build_premarket_receipt(existing)
+            _require_finalization_window_open(
+                handoff,
+                _sample_finalization_time(zone, now=now, clock=clock),
+            )
+            _atomic_write_at(
+                directory_fd,
+                "receipt.json",
+                canonical_json(receipt),
+                mode=0o400,
+            )
+            _validate_premarket_receipt_at(
+                directory_fd,
+                "receipt.json",
+                existing,
+            )
+            _require_finalization_window_open(
+                handoff,
+                _sample_finalization_time(zone, now=now, clock=clock),
+            )
+            return existing
+
+        _require_finalization_window_open(
+            handoff,
+            _sample_finalization_time(zone, now=now, clock=clock),
+        )
+        _atomic_write_at(
+            directory_fd,
+            "forecast.json",
+            canonical_json(candidate),
+            mode=0o400,
+        )
+        receipt = _build_premarket_receipt(candidate)
+        _require_finalization_window_open(
+            handoff,
+            _sample_finalization_time(zone, now=now, clock=clock),
+        )
+        _atomic_write_at(
+            directory_fd,
+            "receipt.json",
+            canonical_json(receipt),
+            mode=0o400,
+        )
+        sealed = _read_model_at(
+            directory_fd,
+            "forecast.json",
+            PremarketForecastV1,
+        )
+        if sealed.content_hash != candidate.content_hash:
+            raise PremarketServiceError(
+                "written premarket forecast has different content"
+            )
+        _validate_premarket_receipt_at(
+            directory_fd,
+            "receipt.json",
+            sealed,
+        )
+        _require_finalization_window_open(
+            handoff,
+            _sample_finalization_time(zone, now=now, clock=clock),
+        )
+        return sealed
 
 
 def load_premarket_forecast(
@@ -296,6 +433,19 @@ def _write_or_match(path: Path, value, model_type) -> None:
         return
     _atomic_write(path, canonical_json(value), mode=0o400)
 
+
+def _build_premarket_receipt(forecast: PremarketForecastV1) -> _PremarketReceiptV1:
+    body = _PremarketReceiptBodyV1(
+        schema_version=PREMARKET_RECEIPT_SCHEMA_V1,
+        run_id=forecast.run_id,
+        request_hash=forecast.request_hash,
+        snapshot_hash=forecast.snapshot_hash,
+        forecast_hash=forecast.content_hash,
+        completed_at=forecast.created_at,
+    )
+    payload = body.model_dump(mode="json")
+    receipt_hash = hashlib.sha256(canonical_json(payload)).hexdigest()
+    return _PremarketReceiptV1(**payload, receipt_hash=receipt_hash)
 
 def build_premarket_brief(
     settings: Settings,
@@ -466,6 +616,387 @@ def _validated_job_dir(settings: Settings, job_dir: Path) -> Path:
             "premarket job must be a direct child of the configured handoff root"
         )
     return resolved
+
+
+def _sample_finalization_time(
+    zone: ZoneInfo,
+    *,
+    now: datetime | None,
+    clock: Callable[[], datetime] | None,
+) -> datetime:
+    sampled = clock() if clock is not None else now or datetime.now(zone)
+    if sampled.tzinfo is None or sampled.utcoffset() is None:
+        raise PremarketServiceError(
+            "premarket finalization time must be timezone-aware"
+        )
+    return sampled.astimezone(zone)
+
+
+def _require_finalization_window_open(
+    handoff: PremarketHandoffV1,
+    sampled_at: datetime,
+) -> None:
+    if sampled_at >= handoff.snapshot.finalization_deadline:
+        raise PremarketServiceError("premarket finalization deadline has passed")
+
+
+def _finalize_forecast_or_error(
+    handoff: PremarketHandoffV1,
+    drafts: PremarketDraftBundleV1,
+    *,
+    accepted_at: datetime,
+) -> PremarketForecastV1:
+    try:
+        return finalize_premarket_forecast(
+            handoff,
+            drafts,
+            accepted_at=accepted_at,
+        )
+    except ValueError as exc:
+        raise PremarketServiceError(str(exc)) from exc
+
+
+@contextmanager
+def _locked_premarket_job(
+    settings: Settings,
+    job_dir: Path,
+) -> Iterator[tuple[Path, int]]:
+    """Open and lock one validated job without following descendant symlinks."""
+
+    configured_input = settings.handoff_root.expanduser()
+    requested_input = job_dir.expanduser()
+    try:
+        configured_before = os.stat(configured_input, follow_symlinks=False)
+        requested_before = os.stat(requested_input, follow_symlinks=False)
+    except OSError as exc:
+        raise PremarketServiceError("premarket job directory is unavailable") from exc
+    if (
+        not stat.S_ISDIR(configured_before.st_mode)
+        or not stat.S_ISDIR(requested_before.st_mode)
+    ):
+        raise PremarketServiceError("premarket job directory is unavailable")
+    try:
+        configured_root = configured_input.resolve(strict=True)
+        requested_job = requested_input.resolve(strict=True)
+        premarket_before = os.stat(
+            configured_input / "premarket",
+            follow_symlinks=False,
+        )
+    except (OSError, RuntimeError) as exc:
+        raise PremarketServiceError("premarket job directory is unavailable") from exc
+    if not stat.S_ISDIR(premarket_before.st_mode):
+        raise PremarketServiceError("premarket job directory is unavailable")
+    expected_parent = configured_root / "premarket"
+    if configured_root == Path("/") or requested_job.parent != expected_parent:
+        raise PremarketServiceError(
+            "premarket job must be a direct child of the configured handoff root"
+        )
+    _require_leaf_name(requested_job.name)
+    directory_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    configured_descriptor: int | None = None
+    premarket_descriptor: int | None = None
+    job_descriptor: int | None = None
+    lock_descriptor: int | None = None
+    try:
+        configured_descriptor = _open_absolute_directory_without_symlinks(
+            configured_root,
+            flags=directory_flags,
+        )
+        root_status = os.fstat(configured_descriptor)
+        configured_after = os.stat(configured_input, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(root_status.st_mode)
+            or _file_identity(root_status) != _file_identity(configured_before)
+            or _file_identity(configured_after) != _file_identity(configured_before)
+        ):
+            raise PremarketServiceError("premarket handoff root is not a directory")
+        premarket_descriptor = os.open(
+            "premarket",
+            directory_flags,
+            dir_fd=configured_descriptor,
+        )
+        premarket_status = os.fstat(premarket_descriptor)
+        premarket_after = os.stat(
+            configured_input / "premarket",
+            follow_symlinks=False,
+        )
+        if (
+            not stat.S_ISDIR(premarket_status.st_mode)
+            or _file_identity(premarket_status) != _file_identity(premarket_before)
+            or _file_identity(premarket_after) != _file_identity(premarket_before)
+        ):
+            raise PremarketServiceError(
+                "premarket handoff root is not a directory"
+            )
+        job_descriptor = os.open(
+            requested_job.name,
+            directory_flags,
+            dir_fd=premarket_descriptor,
+        )
+        job_status = os.fstat(job_descriptor)
+        requested_after = os.stat(requested_input, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(job_status.st_mode)
+            or _file_identity(job_status) != _file_identity(requested_before)
+            or _file_identity(requested_after) != _file_identity(requested_before)
+        ):
+            raise PremarketServiceError("premarket job is not a directory")
+        lock_descriptor = os.open(
+            ".finalize.lock",
+            os.O_RDWR
+            | os.O_CREAT
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0),
+            0o600,
+            dir_fd=job_descriptor,
+        )
+        lock_status = os.fstat(lock_descriptor)
+        if not stat.S_ISREG(lock_status.st_mode) or lock_status.st_nlink != 1:
+            raise PremarketServiceError("premarket finalization lock is invalid")
+        fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
+    except PremarketServiceError:
+        for descriptor in (
+            lock_descriptor,
+            job_descriptor,
+            premarket_descriptor,
+            configured_descriptor,
+        ):
+            if descriptor is not None:
+                os.close(descriptor)
+        raise
+    except OSError as exc:
+        for descriptor in (
+            lock_descriptor,
+            job_descriptor,
+            premarket_descriptor,
+            configured_descriptor,
+        ):
+            if descriptor is not None:
+                os.close(descriptor)
+        raise PremarketServiceError("premarket job could not be locked safely") from exc
+
+    assert job_descriptor is not None
+    try:
+        yield requested_job, job_descriptor
+    finally:
+        assert lock_descriptor is not None
+        assert premarket_descriptor is not None
+        assert configured_descriptor is not None
+        os.close(lock_descriptor)
+        os.close(job_descriptor)
+        os.close(premarket_descriptor)
+        os.close(configured_descriptor)
+
+
+def _open_absolute_directory_without_symlinks(path: Path, *, flags: int) -> int:
+    if not path.is_absolute():
+        raise PremarketServiceError("premarket handoff root must be absolute")
+    descriptor = os.open("/", flags)
+    try:
+        for component in path.parts[1:]:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except OSError:
+        os.close(descriptor)
+        raise
+
+
+def _file_identity(metadata: os.stat_result) -> tuple[int, int]:
+    return metadata.st_dev, metadata.st_ino
+
+
+def _require_leaf_name(name: str) -> None:
+    if not name or name in {".", ".."} or Path(name).name != name:
+        raise PremarketServiceError("premarket artifact name is invalid")
+
+
+def _artifact_exists_at(directory_fd: int, name: str) -> bool:
+    _require_leaf_name(name)
+    try:
+        os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise PremarketServiceError(f"unable to inspect {name}") from exc
+    return True
+
+
+def _safe_read_at(directory_fd: int, name: str) -> bytes:
+    _require_leaf_name(name)
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=directory_fd,
+        )
+    except OSError as exc:
+        raise PremarketServiceError(
+            f"required regular file is missing: {name}"
+        ) from exc
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_JSON_BYTES:
+            raise PremarketServiceError(f"invalid file size: {name}")
+        chunks: list[bytes] = []
+        remaining = before.st_size + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if (
+            len(raw) != before.st_size
+            or after.st_dev != before.st_dev
+            or after.st_ino != before.st_ino
+            or after.st_size != before.st_size
+            or after.st_mtime_ns != before.st_mtime_ns
+        ):
+            raise PremarketServiceError(f"file changed while being read: {name}")
+        return raw
+    except OSError as exc:
+        raise PremarketServiceError(f"unable to read {name}") from exc
+    finally:
+        os.close(descriptor)
+
+
+def _read_model_at(directory_fd: int, name: str, model_type):
+    raw = _safe_read_at(directory_fd, name)
+    try:
+        return model_type.model_validate_json(raw)
+    except ValueError as exc:
+        raise PremarketServiceError(f"invalid {name}") from exc
+
+
+def _atomic_write_at(
+    directory_fd: int,
+    name: str,
+    payload: bytes,
+    *,
+    mode: int,
+) -> None:
+    _require_leaf_name(name)
+    if _artifact_exists_at(directory_fd, name):
+        raise PremarketServiceError(f"refusing to overwrite {name}")
+
+    temporary_name: str | None = None
+    descriptor: int | None = None
+    directory_changed = False
+    phase = "allocate"
+    primary_error: PremarketServiceError | None = None
+    cleanup_error: PremarketServiceError | None = None
+    try:
+        for _ in range(8):
+            candidate = f".{name}.{secrets.token_hex(16)}"
+            try:
+                descriptor = os.open(
+                    candidate,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_CLOEXEC", 0),
+                    mode,
+                    dir_fd=directory_fd,
+                )
+            except FileExistsError:
+                continue
+            temporary_name = candidate
+            directory_changed = True
+            break
+        if descriptor is None or temporary_name is None:
+            raise PremarketServiceError(
+                f"unable to allocate temporary file for {name}"
+            )
+
+        phase = "write"
+        view = memoryview(payload)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("short write")
+            view = view[written:]
+        os.fchmod(descriptor, mode)
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+
+        phase = "publish"
+        try:
+            os.link(
+                temporary_name,
+                name,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError as exc:
+            raise PremarketServiceError(f"refusing to overwrite {name}") from exc
+        os.unlink(temporary_name, dir_fd=directory_fd)
+        temporary_name = None
+        os.fsync(directory_fd)
+        directory_changed = False
+    except PremarketServiceError as exc:
+        primary_error = exc
+    except OSError as exc:
+        operation = "write" if phase in {"allocate", "write"} else "publish"
+        primary_error = PremarketServiceError(f"unable to {operation} {name}")
+        primary_error.__cause__ = exc
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError as exc:
+                cleanup_error = PremarketServiceError(
+                    f"unable to clean up temporary file for {name}"
+                )
+                cleanup_error.__cause__ = exc
+        if temporary_name is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=directory_fd)
+                directory_changed = True
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                cleanup_error = PremarketServiceError(
+                    f"unable to clean up temporary file for {name}"
+                )
+                cleanup_error.__cause__ = exc
+        if directory_changed:
+            try:
+                os.fsync(directory_fd)
+            except OSError as exc:
+                cleanup_error = PremarketServiceError(
+                    f"unable to synchronize artifact directory for {name}"
+                )
+                cleanup_error.__cause__ = exc
+    if primary_error is not None:
+        raise primary_error
+    if cleanup_error is not None:
+        raise cleanup_error
+
+
+def _validate_premarket_receipt_at(
+    directory_fd: int,
+    name: str,
+    forecast: PremarketForecastV1,
+) -> None:
+    existing = _read_model_at(directory_fd, name, _PremarketReceiptV1)
+    expected = _build_premarket_receipt(forecast)
+    if existing.model_dump(mode="json") != expected.model_dump(mode="json"):
+        raise PremarketServiceError("existing premarket receipt does not match forecast")
 
 
 def _read_model(path: Path, model_type):
