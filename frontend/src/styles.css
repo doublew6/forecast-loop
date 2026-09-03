@@ -130,6 +130,35 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .prediction-history li { display: grid; grid-template-columns: 98px 72px minmax(0, 1fr) 150px; align-items: center; gap: 12px; min-height: 44px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
 
 /* Focused research program v2: one formal seal, with lower-contrast diagnostic lanes. */
+.focused-runtime-card { margin-bottom: 14px; overflow: hidden; }
+.focused-runtime-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+.focused-runtime-heading h2 { margin-top: 4px; font-size: 18px; font-weight: 680; letter-spacing: -.02em; }
+.focused-runtime-heading p { max-width: 640px; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; text-wrap: pretty; }
+.focused-runtime-calendar { flex: none; padding: 5px 8px; color: var(--green-deep); background: var(--green-soft); font-size: 9px; font-weight: 720; letter-spacing: .04em; }
+.focused-runtime-body { display: grid; grid-template-columns: minmax(175px, .65fr) minmax(320px, 1.25fr) minmax(220px, .8fr); min-height: 112px; }
+.focused-runtime-status { display: flex; justify-content: center; flex-direction: column; gap: 4px; padding: 18px 20px; background: var(--green-soft); }
+.focused-runtime-status > span { display: flex; align-items: center; gap: 7px; color: var(--green-deep); font-size: 9px; font-weight: 750; letter-spacing: .05em; }
+.focused-runtime-status > span i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(15,118,110,.12); }
+.focused-runtime-status > strong { margin-top: 2px; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.focused-runtime-status > small { color: var(--ink-soft); font-size: 10px; }
+.focused-runtime-date-rail { display: grid; grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr); align-items: center; gap: 14px; padding: 18px 22px; border-left: 1px solid #cfe2dc; }
+.focused-runtime-date-rail > svg { color: var(--green); }
+.focused-runtime-date-rail > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.focused-runtime-date-rail span, .focused-runtime-receipt dt { color: var(--muted); font-size: 9px; }
+.focused-runtime-date-rail strong { font-size: 15px; font-weight: 680; font-variant-numeric: tabular-nums; }
+.focused-runtime-date-rail small { color: var(--ink-soft); font-size: 9px; }
+.focused-runtime-receipt { display: grid; margin: 0; border-left: 1px solid var(--line-soft); background: var(--surface-inset); }
+.focused-runtime-receipt > div { display: flex; min-width: 0; justify-content: center; flex-direction: column; padding: 10px 16px; border-top: 1px solid var(--line-soft); }
+.focused-runtime-receipt > div:first-child { border-top: 0; }
+.focused-runtime-receipt dd { margin: 3px 0 0; overflow: hidden; font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.focused-runtime-receipt code { color: var(--green-deep); font-size: 9px; }
+.focused-runtime-state { display: flex; min-height: 96px; align-items: center; gap: 11px; padding: 18px 20px; color: var(--ink-soft); background: var(--surface-inset); }
+.focused-runtime-state > svg { flex: none; color: var(--muted); }
+.focused-runtime-state > div { display: flex; flex-direction: column; gap: 4px; }
+.focused-runtime-state strong { font-size: 12px; }
+.focused-runtime-state span { color: var(--muted); font-size: 10px; }
+.focused-runtime-state.error { color: var(--red); background: var(--red-soft); }
+.focused-runtime-state.error > svg, .focused-runtime-state.error span { color: var(--red); }
 .focus-program-strip { display: grid; grid-template-columns: minmax(250px, 1.25fr) repeat(3, minmax(145px, .7fr)); margin-bottom: 27px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .focus-program-strip > div { display: flex; min-height: 90px; align-items: center; gap: 10px; padding: 15px 18px; border-left: 1px solid var(--line-soft); }
 .focus-program-strip > div:first-child { border-left: 0; }
@@ -1295,6 +1324,10 @@ a.wiki-atlas-source-row:hover { color: var(--green-deep); background: var(--surf
 }
 
 @media (max-width: 1080px) {
+  .focused-runtime-body { grid-template-columns: minmax(180px, .65fr) minmax(330px, 1.35fr); }
+  .focused-runtime-receipt { grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line-soft); border-left: 0; }
+  .focused-runtime-receipt > div { border-top: 0; border-left: 1px solid var(--line-soft); }
+  .focused-runtime-receipt > div:first-child { border-left: 0; }
   .focus-program-strip { grid-template-columns: 1fr 1fr; }
   .focus-program-strip > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--line-soft); }
   .focus-program-strip > div:nth-child(4) { border-top: 1px solid var(--line-soft); }
@@ -1334,6 +1367,10 @@ a.wiki-atlas-source-row:hover { color: var(--green-deep); background: var(--surf
 }
 
 @media (max-width: 760px) {
+  .focused-runtime-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .focused-runtime-body { grid-template-columns: 1fr; }
+  .focused-runtime-date-rail { border-top: 1px solid #cfe2dc; border-left: 0; }
+  .focused-runtime-receipt { grid-column: auto; }
   .eval-target-gate-row { grid-template-columns: minmax(170px, 1.2fr) 1fr; }
   .trace-filter-bar { grid-template-columns: 1fr 1fr; }
   .trace-filter-bar > svg { display: none; }
@@ -1398,6 +1435,12 @@ a.wiki-atlas-source-row:hover { color: var(--green-deep); background: var(--surf
 }
 
 @media (max-width: 520px) {
+  .focused-runtime-calendar { align-self: flex-start; }
+  .focused-runtime-date-rail { gap: 8px; padding: 16px; }
+  .focused-runtime-date-rail strong { font-size: 13px; }
+  .focused-runtime-receipt { grid-template-columns: 1fr; }
+  .focused-runtime-receipt > div { min-height: 54px; border-top: 1px solid var(--line-soft); border-left: 0; }
+  .focused-runtime-receipt > div:first-child { border-top: 0; }
   .premarket-outcome-ledger > .panel-heading, .premarket-return-heading { align-items: flex-start; flex-direction: column; }
   .premarket-win-seal { width: 100%; padding: 12px 0 0; border-top: 1px solid var(--line-soft); border-left: 0; text-align: left; }
   .premarket-return-metrics { width: 100%; justify-content: flex-start; }

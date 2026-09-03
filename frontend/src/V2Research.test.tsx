@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 
 import { App } from './App'
@@ -69,6 +69,12 @@ describe('focused v2 research UI', () => {
     renderRoute()
 
     expect(await screen.findByRole('heading', { name: '中证1000 单主标的决策台' })).toBeInTheDocument()
+    const runtime = screen.getByRole('region', { name: '每日研究链路' })
+    expect(await within(runtime).findByText('最新预测目标交易日')).toBeInTheDocument()
+    expect(within(runtime).getByText('2026-08-12')).toBeInTheDocument()
+    expect(within(runtime).getAllByText('2026-08-13')).toHaveLength(2)
+    expect(within(runtime).getByText('SSE · Asia/Shanghai')).toBeInTheDocument()
+    expect(within(runtime).getByText('只读取当前中证1000 D1 封签；旧版五指数回执保留在运行记录，不再回填这里。')).toBeInTheDocument()
     expect(await screen.findByText('唯一正式目标 · 已激活发布 · 下一交易日绝对涨跌')).toBeInTheDocument()
     expect(screen.getByText('SHADOW · W1')).toBeInTheDocument()
     expect(screen.getByText('只用于相对收益计算和冻结市场背景，不生成独立正式预测。')).toBeInTheDocument()
@@ -97,6 +103,22 @@ describe('focused v2 research UI', () => {
     expect(await screen.findByText('唯一正式目标 · 当前 Shadow 观察 · 下一交易日绝对涨跌')).toBeInTheDocument()
     expect(screen.getByText('SHADOW · D1')).toBeInTheDocument()
     expect(screen.queryByText('FORMAL · D1')).not.toBeInTheDocument()
+  })
+
+  it('fails closed instead of falling back to legacy prediction receipts', async () => {
+    const fetchMock = vi.fn().mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/api/v2/research-program')) return response(program)
+      if (url.endsWith('/api/v2/forecasts/latest')) return Promise.reject(new Error('v2 unavailable'))
+      return Promise.reject(new Error(`unexpected request ${url}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderRoute()
+
+    expect(await screen.findByText('v2 封签暂不可用')).toBeInTheDocument()
+    expect(screen.getByText('读取失败；页面已停止展示旧版日期，避免误判为当前运行。')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/prediction-status'))).toBe(false)
   })
 
   it('renders the five scorecard axes without a best-agent ranking', async () => {

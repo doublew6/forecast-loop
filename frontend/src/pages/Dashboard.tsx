@@ -52,6 +52,76 @@ function forecastDirection(forecast: ForecastV2) {
     .sort((left, right) => right[1] - left[1])[0][0]
 }
 
+function FocusedRuntimeCard({
+  forecast,
+  loading,
+  failed,
+  program,
+}: {
+  forecast: ForecastV2 | null
+  loading: boolean
+  failed: boolean
+  program: ResearchProgramV2
+}) {
+  return (
+    <section className="focused-runtime-card panel" aria-labelledby="focused-runtime-heading">
+      <div className="focused-runtime-heading">
+        <div>
+          <span className="eyebrow">v2 · 封签回执</span>
+          <h2 id="focused-runtime-heading">每日研究链路</h2>
+          <p>只读取当前中证1000 D1 封签；旧版五指数回执保留在运行记录，不再回填这里。</p>
+        </div>
+        <span className="focused-runtime-calendar">{program.calendar_id} · {program.timezone}</span>
+      </div>
+
+      {loading ? (
+        <div className="focused-runtime-state muted" role="status">
+          <Clock3 size={17} aria-hidden="true" />
+          <div><strong>正在读取 v2 封签</strong><span>不会使用旧版回执代替当前状态。</span></div>
+        </div>
+      ) : failed ? (
+        <div className="focused-runtime-state error" role="status">
+          <ShieldCheck size={17} aria-hidden="true" />
+          <div><strong>v2 封签暂不可用</strong><span>读取失败；页面已停止展示旧版日期，避免误判为当前运行。</span></div>
+        </div>
+      ) : forecast ? (
+        <div className="focused-runtime-body">
+          <div className="focused-runtime-status">
+            <span><i /> 最新可用封签</span>
+            <strong>{forecast.target_date}</strong>
+            <small>最新预测目标交易日</small>
+          </div>
+
+          <div className="focused-runtime-date-rail" aria-label={`锚点日 ${forecast.anchor_date}，目标交易日 ${forecast.target_date}`}>
+            <div>
+              <span>锚点日</span>
+              <strong>{forecast.anchor_date}</strong>
+              <small>已完成数据</small>
+            </div>
+            <ArrowRight size={18} aria-hidden="true" />
+            <div>
+              <span>目标交易日</span>
+              <strong>{forecast.target_date}</strong>
+              <small>下一交易日预测</small>
+            </div>
+          </div>
+
+          <dl className="focused-runtime-receipt">
+            <div><dt>封签时间</dt><dd>{formatDateTime(forecast.created_at)}</dd></div>
+            <div><dt>运行轨道</dt><dd>{forecast.lane === 'formal' ? 'Formal' : 'Shadow'}</dd></div>
+            <div><dt>Forecast ID</dt><dd><code>{forecast.id.slice(0, 8)}</code></dd></div>
+          </dl>
+        </div>
+      ) : (
+        <div className="focused-runtime-state muted" role="status">
+          <Clock3 size={17} aria-hidden="true" />
+          <div><strong>等待首个 v2 D1 封签</strong><span>没有当前封签时保持空态，不展示旧版历史日期。</span></div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function FocusedForecast({ forecast }: { forecast: ForecastV2 }) {
   const direction = forecastDirection(forecast)
   const isFormal = forecast.lane === 'formal'
@@ -103,9 +173,12 @@ function FocusedDashboard({ program }: { program: ResearchProgramV2 }) {
         )}
       />
 
-      {latest.isError && (
-        <div className="action-message" role="status">v2 Program 已启用，最新预测尚不可用；没有使用五指数历史结果代替。</div>
-      )}
+      <FocusedRuntimeCard
+        forecast={formal}
+        loading={latest.isLoading}
+        failed={latest.isError}
+        program={program}
+      />
 
       <section className="focus-program-strip" aria-label="v2 研究协议">
         <div className="focus-program-primary">

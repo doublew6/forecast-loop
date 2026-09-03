@@ -54,6 +54,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- The focused Dashboard runtime card now reads the current v2 CSI 1000 D1 seal,
+  shows its frozen SSE anchor-to-target session pair, and fails closed instead
+  of presenting legacy five-index preparation receipts as current activity.
 - Interrupted pre-market finalization now recovers a missing receipt only from
   the verified forecast and frozen drafts before the exclusive 09:24 deadline,
   while receipt-only, conflicting, and tampered artifact states fail closed.
