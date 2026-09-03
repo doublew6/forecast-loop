@@ -6,6 +6,7 @@ import hashlib
 import json
 import operator
 import sqlite3
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -538,66 +539,97 @@ class CommitteeWorkflow:
                         raise StaleRunExecutionError(f"run {run_id} execution fence is stale")
                     raise RuntimeError(f"run {run_id} was already claimed or finalized")
             session.commit()
-        try:
-            result = self.graph.invoke(
-                prepared.initial,
-                config={
-                    "configurable": {
-                        "thread_id": checkpoint_thread_id or run_id,
-                    }
+        trace_context = (
+            self.trace_recorder.execution(
+                workflow_kind="prediction",
+                subject_id=run_id,
+                mode=prepared.row.mode,
+                input_hash=prepared.row.input_hash,
+                input_value=self._runtime_task_input(prepared),
+                name="forecast-loop.prediction.run",
+                attributes={
+                    "provider": self.provider.name,
+                    "workflow_version": self.workflow_version,
+                    "decision_schema_version": self.decision_schema_version,
+                    "index_count": len(self.instruments),
                 },
             )
-            completed_at = execution_time or datetime.now(ZoneInfo(self.settings.timezone))
-            with self.database.session_factory() as session:
-                persistent = session.get(WorkflowRun, run_id)
-                assert persistent is not None
-                self._finalize_task_execution(
-                    session,
-                    execution_fence,
-                    run_id=run_id,
-                )
-                fenced = session.execute(
-                    update(WorkflowRun)
-                    .where(
-                        WorkflowRun.id == run_id,
-                        WorkflowRun.status == RunStatus.RUNNING.value,
-                        *self._run_execution_fence_predicates(run_execution_fence),
+            if self.trace_recorder is not None
+            else nullcontext(None)
+        )
+        try:
+            with trace_context as execution_trace:
+                workflow_span_context = (
+                    self.trace_recorder.span(
+                        workflow_kind="prediction",
+                        subject_id=run_id,
+                        trace_id=(execution_trace.trace_id if execution_trace else None),
+                        node_id="workflow.execute",
+                        name="execute forecast workflow",
+                        span_kind="workflow",
+                        input_value={
+                            "run_id": run_id,
+                            "as_of": prepared.initial["as_of"],
+                            "data_cutoff": prepared.initial["data_cutoff"],
+                        },
+                        attributes={
+                            "provider": self.provider.name,
+                            "workflow_version": self.workflow_version,
+                        },
                     )
-                    .values(status=RunStatus.RUNNING.value)
-                    .execution_options(synchronize_session=False)
+                    if self.trace_recorder is not None
+                    else nullcontext(None)
                 )
-                if fenced.rowcount != 1:
-                    session.rollback()
-                    if run_execution_fence is not None:
-                        raise StaleRunExecutionError(f"run {run_id} execution fence is stale")
-                    raise RuntimeError(f"run {run_id} changed status during workflow execution")
-                session.refresh(persistent, attribute_names=["data_quality"])
-                self._validate_believability_seal(
-                    persistent,
-                    prepared.initial,
+                with workflow_span_context as workflow_span:
+                    result = self.graph.invoke(
+                        prepared.initial,
+                        config={
+                            "configurable": {
+                                "thread_id": checkpoint_thread_id or run_id,
+                            }
+                        },
+                    )
+                    if workflow_span is not None:
+                        workflow_span.set_output(
+                            {
+                                "opinion_count": len(result.get("opinions", [])),
+                                "forecast_count": len(result.get("forecasts", [])),
+                            }
+                        )
+                persistence_context = (
+                    self.trace_recorder.span(
+                        workflow_kind="prediction",
+                        subject_id=run_id,
+                        trace_id=(execution_trace.trace_id if execution_trace else None),
+                        node_id="workflow.persist_result",
+                        name="persist immutable forecast result",
+                        span_kind="persistence",
+                        input_value={
+                            "run_id": run_id,
+                            "opinion_count": len(result.get("opinions", [])),
+                            "forecast_count": len(result.get("forecasts", [])),
+                        },
+                        attributes={"forecast_count": len(result.get("forecasts", []))},
+                    )
+                    if self.trace_recorder is not None
+                    else nullcontext(None)
                 )
-                if (
-                    persistent.input_hash != prepared.initial.get("input_hash")
-                    or persistent.input_hash != prepared.row.input_hash
-                ):
-                    raise RuntimeError("prepared run input hash changed during workflow execution")
-                self._validate_result_believability_boundary(
-                    persistent,
-                    result,
-                    prepared.initial,
-                )
-                self._persist_result(session, result)
-                persistent.status = RunStatus.COMPLETED.value
-                persistent.completed_at = completed_at
-                persistent.duration_seconds = max(0.0, (completed_at - started_at).total_seconds())
-                persistent.error = None
-                persistent.workflow_steps = result.get("workflow_steps", [])
-                persistent.data_quality = {
-                    **(persistent.data_quality or {}),
-                    **result.get("data_quality", {}),
-                }
-                session.commit()
-                session.refresh(persistent)
+                with persistence_context as persistence_span:
+                    persistent = self._persist_completed_result(
+                        prepared,
+                        result,
+                        started_at=started_at,
+                        execution_time=execution_time,
+                        execution_fence=execution_fence,
+                        run_execution_fence=run_execution_fence,
+                    )
+                    if persistence_span is not None:
+                        persistence_span.set_output(
+                            {"run_id": run_id, "status": persistent.status}
+                        )
+                runtime_output = self._runtime_forecast_output(result)
+                if execution_trace is not None:
+                    execution_trace.set_output(runtime_output)
                 return persistent
         except (StaleRunExecutionError, StaleTaskLeaseError):
             raise
@@ -636,6 +668,95 @@ class CommitteeWorkflow:
                 if not raise_errors:
                     return failed
             raise
+
+    def _persist_completed_result(
+        self,
+        prepared: PreparedRun,
+        result: CommitteeState,
+        *,
+        started_at: datetime,
+        execution_time: datetime | None,
+        execution_fence: ExecutionFence | None,
+        run_execution_fence: RunExecutionFence | None,
+    ) -> WorkflowRun:
+        run_id = prepared.row.id
+        completed_at = execution_time or datetime.now(ZoneInfo(self.settings.timezone))
+        with self.database.session_factory() as session:
+            persistent = session.get(WorkflowRun, run_id)
+            assert persistent is not None
+            self._finalize_task_execution(session, execution_fence, run_id=run_id)
+            fenced = session.execute(
+                update(WorkflowRun)
+                .where(
+                    WorkflowRun.id == run_id,
+                    WorkflowRun.status == RunStatus.RUNNING.value,
+                    *self._run_execution_fence_predicates(run_execution_fence),
+                )
+                .values(status=RunStatus.RUNNING.value)
+                .execution_options(synchronize_session=False)
+            )
+            if fenced.rowcount != 1:
+                session.rollback()
+                if run_execution_fence is not None:
+                    raise StaleRunExecutionError(f"run {run_id} execution fence is stale")
+                raise RuntimeError(f"run {run_id} changed status during workflow execution")
+            session.refresh(persistent, attribute_names=["data_quality"])
+            self._validate_believability_seal(persistent, prepared.initial)
+            if (
+                persistent.input_hash != prepared.initial.get("input_hash")
+                or persistent.input_hash != prepared.row.input_hash
+            ):
+                raise RuntimeError("prepared run input hash changed during workflow execution")
+            self._validate_result_believability_boundary(
+                persistent,
+                result,
+                prepared.initial,
+            )
+            self._persist_result(session, result)
+            persistent.status = RunStatus.COMPLETED.value
+            persistent.completed_at = completed_at
+            persistent.duration_seconds = max(
+                0.0,
+                (completed_at - started_at).total_seconds(),
+            )
+            persistent.error = None
+            persistent.workflow_steps = result.get("workflow_steps", [])
+            persistent.data_quality = {
+                **(persistent.data_quality or {}),
+                **result.get("data_quality", {}),
+            }
+            session.commit()
+            session.refresh(persistent)
+            return persistent
+
+    def _runtime_task_input(self, prepared: PreparedRun) -> dict[str, Any]:
+        return {
+            "instruction": (
+                "Produce the configured forecast set from the frozen evidence and Wiki "
+                "snapshot, validate every citation, and persist only a sealed result."
+            ),
+            "run_id": prepared.row.id,
+            "as_of": prepared.initial["as_of"],
+            "data_cutoff": prepared.initial["data_cutoff"],
+            "forecast_horizons": [item.value for item in self.forecast_horizons],
+            "targets": [
+                {
+                    "code": instrument.code,
+                    "name": instrument.name,
+                    "market": instrument.market,
+                }
+                for instrument in self.instruments
+            ],
+            "frozen_evidence": prepared.initial["evidence_snapshot"],
+            "frozen_wiki": prepared.initial["wiki_snapshot"],
+        }
+
+    @staticmethod
+    def _runtime_forecast_output(result: CommitteeState) -> dict[str, Any]:
+        return {
+            "answer": "Forecast workflow completed with sealed outputs.",
+            "forecasts": result.get("forecasts", []),
+        }
 
     @staticmethod
     def _run_execution_fence_predicates(
@@ -711,13 +832,56 @@ class CommitteeWorkflow:
 
     def _build_graph(self):
         builder = StateGraph(CommitteeState)
-        builder.add_node("freeze_snapshot", self._freeze_snapshot)
+        builder.add_node(
+            "freeze_snapshot",
+            self._traced_node(
+                "freeze_snapshot",
+                "freeze runtime inputs",
+                "external",
+                self._freeze_snapshot,
+            ),
+        )
         for agent_id in RESEARCH_AGENT_IDS:
-            builder.add_node(agent_id, self._research_node(agent_id))
-        builder.add_node(STRATEGY_AGENT_ID, self._strategy_node)
-        builder.add_node("risk_critic_agent", self._critic_node)
-        builder.add_node("evidence_validator", self._validate_evidence)
-        builder.add_node("cio_agent", self._cio_node)
+            builder.add_node(
+                agent_id,
+                self._traced_node(
+                    agent_id,
+                    f"run {agent_id}",
+                    "agent",
+                    self._research_node(agent_id),
+                ),
+            )
+        builder.add_node(
+            STRATEGY_AGENT_ID,
+            self._traced_node(
+                STRATEGY_AGENT_ID,
+                "run strategy agent",
+                "agent",
+                self._strategy_node,
+            ),
+        )
+        builder.add_node(
+            "risk_critic_agent",
+            self._traced_node(
+                "risk_critic_agent",
+                "run risk critic agent",
+                "agent",
+                self._critic_node,
+            ),
+        )
+        builder.add_node(
+            "evidence_validator",
+            self._traced_node(
+                "evidence_validator",
+                "validate frozen evidence bindings",
+                "validator",
+                self._validate_evidence,
+            ),
+        )
+        builder.add_node(
+            "cio_agent",
+            self._traced_node("cio_agent", "aggregate final forecasts", "agent", self._cio_node),
+        )
 
         builder.add_edge(START, "freeze_snapshot")
         for agent_id in RESEARCH_AGENT_IDS:
@@ -736,6 +900,38 @@ class CommitteeWorkflow:
             checkpointer = SqliteSaver(self._checkpoint_connection)
             checkpointer.setup()
         return builder.compile(checkpointer=checkpointer)
+
+    def _traced_node(
+        self,
+        node_id: str,
+        name: str,
+        span_kind: Literal["agent", "validator", "external"],
+        operation,
+    ):
+        def traced(state: CommitteeState) -> CommitteeState:
+            if self.trace_recorder is None:
+                return operation(state)
+            with self.trace_recorder.span(
+                workflow_kind="prediction",
+                subject_id=state["run_id"],
+                node_id=f"node.{node_id}",
+                name=name,
+                span_kind=span_kind,
+                agent_id=node_id if span_kind == "agent" else None,
+                input_value={
+                    "run_id": state["run_id"],
+                    "as_of": state["as_of"],
+                    "opinion_count": len(state.get("opinions", [])),
+                    "forecast_count": len(state.get("forecasts", [])),
+                },
+                attributes={"provider": self.provider.name},
+            ) as span:
+                result = operation(state)
+                if span is not None:
+                    span.set_output(result)
+                return result
+
+        return traced
 
     def _freeze_snapshot(self, state: CommitteeState) -> CommitteeState:
         now = _now_iso(self.settings.timezone)
@@ -785,6 +981,40 @@ class CommitteeWorkflow:
             "workflow_steps": [_step("freeze_snapshot", "冻结行情、资讯与 Wiki 版本", now)],
         }
 
+    def _provider_call_context(
+        self,
+        *,
+        state: CommitteeState,
+        agent_id: str,
+        index: IndexDefinition,
+        horizon: Horizon,
+        input_value: dict[str, Any],
+    ):
+        trace_recorder = getattr(self, "trace_recorder", None)
+        if trace_recorder is None:
+            return nullcontext(None)
+        configured_kind = getattr(self.provider, "trace_span_kind", "llm")
+        span_kind: Literal["llm", "external", "agent"] = (
+            "llm"
+            if configured_kind == "llm"
+            else "external"
+            if configured_kind == "external"
+            else "agent"
+        )
+        return trace_recorder.span(
+            workflow_kind="prediction",
+            subject_id=state["run_id"],
+            node_id=f"provider.{agent_id}.{index.code}.{horizon.value}",
+            name=f"dispatch {agent_id} provider",
+            span_kind=span_kind,
+            agent_id=agent_id,
+            agent_version=AGENT_BY_ID[agent_id].version,
+            model_name=self._model_name_for_agent(agent_id),
+            prompt_version=getattr(self.provider, "prompt_version", None),
+            input_value=input_value,
+            attributes={"provider": self.provider.name, "horizon": horizon.value},
+        )
+
     def _research_node(self, agent_id: str):
         def node(state: CommitteeState) -> CommitteeState:
             started = _now_iso(self.settings.timezone)
@@ -795,14 +1025,33 @@ class CommitteeWorkflow:
             additions: list[dict[str, Any]] = []
             for index in self.instruments:
                 for horizon in self.forecast_horizons:
-                    draft = self.provider.research(
+                    with self._provider_call_context(
+                        state=state,
                         agent_id=agent_id,
                         index=index,
                         horizon=horizon,
-                        as_of=as_of,
-                        wiki=wiki,
-                        evidence_snapshot=snapshot,
-                    )
+                        input_value={
+                            "agent_id": agent_id,
+                            "instrument": {
+                                "code": index.code,
+                                "name": index.name,
+                                "market": index.market,
+                            },
+                            "horizon": horizon.value,
+                            "as_of": as_of.isoformat(),
+                            "frozen_evidence": snapshot.model_dump(mode="json"),
+                        },
+                    ) as provider_span:
+                        draft = self.provider.research(
+                            agent_id=agent_id,
+                            index=index,
+                            horizon=horizon,
+                            as_of=as_of,
+                            wiki=wiki,
+                            evidence_snapshot=snapshot,
+                        )
+                        if provider_span is not None:
+                            provider_span.set_output(draft.model_dump(mode="json"))
                     _validate_draft_wiki(
                         draft=draft,
                         wiki=wiki,
@@ -955,16 +1204,33 @@ class CommitteeWorkflow:
                     }
                     for opinion in peer_opinions
                 ]
-                draft = self.provider.strategize(
+                with self._provider_call_context(
+                    state=state,
+                    agent_id=agent.id,
                     index=index,
                     horizon=horizon,
-                    as_of=as_of,
-                    data_cutoff=snapshot.data_cutoff,
-                    volatility_20d=snapshot.volatility_20d[index.code],
-                    wiki=wiki,
-                    research_opinions=safe_context,
-                    peer_opinions=peer_context,
-                )
+                    input_value={
+                        "instrument": {"code": index.code, "name": index.name},
+                        "horizon": horizon.value,
+                        "as_of": as_of.isoformat(),
+                        "data_cutoff": snapshot.data_cutoff.isoformat(),
+                        "volatility_20d": snapshot.volatility_20d[index.code],
+                        "research_opinions": safe_context,
+                        "peer_opinions": peer_context,
+                    },
+                ) as provider_span:
+                    draft = self.provider.strategize(
+                        index=index,
+                        horizon=horizon,
+                        as_of=as_of,
+                        data_cutoff=snapshot.data_cutoff,
+                        volatility_20d=snapshot.volatility_20d[index.code],
+                        wiki=wiki,
+                        research_opinions=safe_context,
+                        peer_opinions=peer_context,
+                    )
+                    if provider_span is not None:
+                        provider_span.set_output(draft.model_dump(mode="json"))
                 strategy_entry = wiki.select_for_agent(
                     agent.id,
                     index_code=index.code,
@@ -1070,13 +1336,27 @@ class CommitteeWorkflow:
                     }
                     for opinion in research_opinions
                 ]
-                draft = self.provider.criticize(
+                with self._provider_call_context(
+                    state=state,
+                    agent_id=agent.id,
                     index=index,
                     horizon=horizon,
-                    as_of=as_of,
-                    wiki=wiki,
-                    research_opinions=safe_context,
-                )
+                    input_value={
+                        "instrument": {"code": index.code, "name": index.name},
+                        "horizon": horizon.value,
+                        "as_of": as_of.isoformat(),
+                        "research_opinions": safe_context,
+                    },
+                ) as provider_span:
+                    draft = self.provider.criticize(
+                        index=index,
+                        horizon=horizon,
+                        as_of=as_of,
+                        wiki=wiki,
+                        research_opinions=safe_context,
+                    )
+                    if provider_span is not None:
+                        provider_span.set_output(draft.model_dump(mode="json"))
                 _validate_draft_wiki(
                     draft=draft,
                     wiki=wiki,

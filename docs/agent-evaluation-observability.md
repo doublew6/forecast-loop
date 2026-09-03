@@ -145,6 +145,25 @@ token/cost（可用时）、错误与输入输出 digest。不保存完整 promp
 
 设置 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 后，同一批 span 会通过 OpenTelemetry OTLP/HTTP 镜像到私有后端。Opik 可以作为可选的自托管后端，但 forecast-loop 不依赖 Opik 才能运行；后端不可用不会阻断正式流程。`FORECAST_LOOP_AGENT_TRACE_EXTERNAL_URL` 只控制前端的外部下钻链接。
 
+需要查看一次 Agent 实际做了什么时，可在运行主机安装实现
+`evalmesh.RuntimeTracer` 契约的可选包，并把
+`FORECAST_LOOP_AGENT_RUNTIME_TRACE_POLICY` 指向 Git worktree 之外、权限为 `0600` 的私有
+策略文件。策略中的目标项目、凭证、原始 JSONL 输出位置和内容捕获开关不得进入本仓库。
+Agent 与私有 backend 同机时使用 loopback policy；Agent 位于其他节点时，只允许经过认证的
+私有网络 HTTPS policy，并要求 `allow_remote=true`。真实 endpoint、运行节点名称和 policy
+路径不得出现在文档、示例、环境模板或 smoke 命令中。
+启用后，真实执行入口会生成一条 execution root Trace：Input 是冻结证据与 Wiki 组成的
+实际任务输入，Output 是最终封签 forecast；共享 provider 分发层记录 `llm` span，冻结输入、
+validator 和持久化边界分别记录 `tool`、`guardrail` 或 `general` span，并保留父子关系、耗时
+与错误状态。只有实际发生的调用会生成 span，健康检查和 synthetic validation 不算运行证明。
+
+该桥接不改变公开数据面：`agent_traces` 和 `agent_trace_spans` 仍只保存 allowlist 元数据、
+摘要与 digest，公开 API/UI 不返回 Prompt、模型正文或工具 I/O。私有 delivery 或可选包初始化
+失败时，业务执行继续，本地 attempt 标为 `telemetry_complete=false` / `degraded` 并记录有限
+错误类型。受控 smoke run 必须在私有后端同时确认非空 root Input/Output、至少一个真实模型
+调用产生的 `llm` span，以及本次运行确实发生的 tool spans。smoke 报告还必须写明运行主机
+类别、endpoint 类型和 Opik Trace ID；跨节点 smoke 在导出真实内容前必须取得明确授权。
+
 当前版本不自动删除 trace，也不改写历史 trace。历史 prediction 详情页会从其不可变运行
 回执只读投影 Wiki 读取、持久化和引用血缘节点，并标记为
 `derived_from_immutable_receipt`；新运行会直接记录同类 span。后续如需 retention，必须

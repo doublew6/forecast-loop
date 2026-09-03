@@ -12,7 +12,8 @@ import json
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from contextvars import ContextVar, Token
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -24,6 +25,12 @@ from sqlalchemy.exc import IntegrityError
 from ..config import Settings
 from ..db import Database
 from ..models import AgentTrace, AgentTraceArtifactLink, AgentTraceSpan
+from .runtime_trace_bridge import (
+    RuntimeDelivery,
+    RuntimeExecution,
+    RuntimeSpan,
+    build_runtime_bridge,
+)
 
 TRACE_POLICY_VERSION = "2.0.0"
 _MAX_ATTRIBUTE_ITEMS = 24
@@ -62,10 +69,45 @@ ArtifactKind = Literal[
 ArtifactRelation = Literal["input", "output", "reused", "diagnostic"]
 
 
-@dataclass(frozen=True, slots=True)
+_UNSET = object()
+
+
+@dataclass(slots=True)
 class TraceSpanHandle:
     trace_id: str
     span_id: str
+    _runtime_span: RuntimeSpan | None = field(default=None, repr=False)
+    _output_value: Any = field(default=_UNSET, repr=False)
+
+    def set_output(self, value: Any) -> None:
+        """Attach private runtime output and retain only its digest locally."""
+
+        self._output_value = value
+        if self._runtime_span is not None:
+            self._runtime_span.set_output(value)
+
+    def set_usage(
+        self,
+        value: dict[str, Any],
+        *,
+        total_cost: float | None = None,
+    ) -> None:
+        if self._runtime_span is not None:
+            self._runtime_span.set_usage(value, total_cost=total_cost)
+
+
+@dataclass(slots=True)
+class TraceExecutionHandle:
+    trace_id: str | None
+    runtime_trace_id: str | None
+    runtime_delivery: RuntimeDelivery | None = None
+    _runtime: RuntimeExecution | None = field(default=None, repr=False)
+
+    def set_output(self, value: Any) -> None:
+        """Set the root Trace output without copying it into the public store."""
+
+        if self._runtime is not None:
+            self._runtime.set_output(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +138,13 @@ class TraceRecorder:
         self._otel_tracer = otel.tracer
         self._otlp_telemetry_complete = otel.telemetry_complete
         self._otlp_telemetry_note = otel.note
+        self._runtime_setup = build_runtime_bridge(settings.agent_runtime_trace_policy)
+        self._active_runtime: ContextVar[RuntimeExecution | None] = ContextVar(
+            f"forecast_loop_runtime_trace_{id(self)}", default=None
+        )
+        self._active_span_stack: ContextVar[tuple[TraceSpanHandle, ...]] = ContextVar(
+            f"forecast_loop_trace_span_stack_{id(self)}", default=()
+        )
 
     @property
     def otlp_telemetry_complete(self) -> bool:
@@ -111,6 +160,14 @@ class TraceRecorder:
     @property
     def otlp_telemetry_note(self) -> str | None:
         return self._otlp_telemetry_note
+
+    @property
+    def runtime_telemetry_complete(self) -> bool:
+        return self._runtime_setup.telemetry_complete
+
+    @property
+    def runtime_telemetry_note(self) -> str | None:
+        return self._runtime_setup.note
 
     def start_trace(
         self,
@@ -164,10 +221,11 @@ class TraceRecorder:
                     + 1
                 )
                 trace_attributes = sanitize_trace_attributes(attributes or {})
-                if self._otlp_telemetry_note is not None:
+                telemetry_note = self._telemetry_note()
+                if telemetry_note is not None:
                     trace_attributes = {
                         **trace_attributes,
-                        "telemetry_note": self._summary(self._otlp_telemetry_note),
+                        "telemetry_note": self._summary(telemetry_note),
                     }
                 session.add(
                     AgentTrace(
@@ -183,7 +241,10 @@ class TraceRecorder:
                         completed_at=None,
                         input_hash=_hash_or_none(input_hash),
                         trace_policy_version=TRACE_POLICY_VERSION,
-                        telemetry_complete=self._otlp_telemetry_complete,
+                        telemetry_complete=(
+                            self._otlp_telemetry_complete
+                            and self._runtime_setup.telemetry_complete
+                        ),
                         error_code=None,
                         error_summary=None,
                         attributes=trace_attributes,
@@ -230,6 +291,89 @@ class TraceRecorder:
             return None
 
     @contextmanager
+    def execution(
+        self,
+        *,
+        workflow_kind: Literal["prediction", "reflection", "agent_eval"],
+        subject_id: str,
+        mode: str,
+        input_hash: str | None,
+        input_value: Any,
+        name: str,
+        target_id: str | None = None,
+        horizon: str | None = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> Iterator[TraceExecutionHandle]:
+        """Open one local attempt and its optional private root execution Trace."""
+
+        trace_id = self.start_trace(
+            workflow_kind=workflow_kind,
+            subject_id=subject_id,
+            mode=mode,
+            input_hash=input_hash,
+            target_id=target_id,
+            horizon=horizon,
+            attributes=attributes,
+        )
+        runtime = RuntimeExecution(
+            self._runtime_setup,
+            name=_runtime_identifier(name),
+            prompt=input_value,
+            metadata={
+                "workflow_kind": workflow_kind,
+                "subject_id": subject_id,
+                "mode": mode,
+            },
+            tags=["forecast-loop", f"workflow:{workflow_kind}"],
+        )
+        runtime.enter()
+        if runtime.error_note is not None:
+            self.mark_degraded(
+                workflow_kind=workflow_kind,
+                subject_id=subject_id,
+                trace_id=trace_id,
+                note=runtime.error_note,
+            )
+        token = self._active_runtime.set(runtime if runtime.active else None)
+        handle = TraceExecutionHandle(
+            trace_id=trace_id,
+            runtime_trace_id=runtime.delivery.trace_id,
+            _runtime=runtime,
+        )
+        failure: BaseException | None = None
+        try:
+            yield handle
+        except BaseException as exc:
+            failure = exc
+            raise
+        finally:
+            self._active_runtime.reset(token)
+            handle.runtime_delivery = runtime.close(failure)
+            handle.runtime_trace_id = handle.runtime_delivery.trace_id
+            if runtime.error_note is not None:
+                self.mark_degraded(
+                    workflow_kind=workflow_kind,
+                    subject_id=subject_id,
+                    trace_id=trace_id,
+                    note=runtime.error_note,
+                )
+            status: Literal["completed", "failed", "degraded"]
+            if failure is not None:
+                status = "failed"
+            elif runtime.error_note is not None:
+                status = "degraded"
+            else:
+                status = "completed"
+            self.finish_trace(
+                workflow_kind=workflow_kind,
+                subject_id=subject_id,
+                trace_id=trace_id,
+                status=status,
+                error=failure,
+                attributes={"external_receipt": handle.runtime_delivery.delivered},
+            )
+
+    @contextmanager
     def span(
         self,
         *,
@@ -248,13 +392,22 @@ class TraceRecorder:
         attributes: dict[str, Any] | None = None,
         trace_id: str | None = None,
     ) -> Iterator[TraceSpanHandle | None]:
+        stack = self._active_span_stack.get()
+        resolved_trace_id = trace_id
+        if resolved_trace_id is None and stack:
+            resolved_trace_id = stack[-1].trace_id
+        resolved_parent_id = parent_span_id
+        if resolved_parent_id is None and stack:
+            candidate = stack[-1]
+            if resolved_trace_id is None or candidate.trace_id == resolved_trace_id:
+                resolved_parent_id = candidate.span_id
         handle = self._start_span(
             workflow_kind=workflow_kind,
             subject_id=subject_id,
             node_id=node_id,
             name=name,
             span_kind=span_kind,
-            parent_span_id=parent_span_id,
+            parent_span_id=resolved_parent_id,
             agent_id=agent_id,
             agent_version=agent_version,
             model_name=model_name,
@@ -262,8 +415,41 @@ class TraceRecorder:
             summary=summary,
             input_value=input_value,
             attributes=attributes,
-            trace_id=trace_id,
+            trace_id=resolved_trace_id,
         )
+        stack_token: Token[tuple[TraceSpanHandle, ...]] | None = None
+        if handle is not None:
+            stack_token = self._active_span_stack.set((*stack, handle))
+        runtime = self._active_runtime.get()
+        if handle is not None and runtime is not None:
+            handle._runtime_span = runtime.span(
+                _runtime_identifier(node_id),
+                span_type=_runtime_span_type(span_kind),
+                input_value=input_value,
+                metadata={
+                    "span_kind": span_kind,
+                    "agent_id": agent_id,
+                    "agent_version": agent_version,
+                    "prompt_version": prompt_version,
+                },
+                model=(
+                    _runtime_identifier(model_name)
+                    if span_kind == "llm" and model_name
+                    else None
+                ),
+                provider=(
+                    _runtime_identifier(str((attributes or {}).get("provider")))
+                    if span_kind == "llm" and (attributes or {}).get("provider")
+                    else None
+                ),
+            )
+            if runtime.error_note is not None:
+                self.mark_degraded(
+                    workflow_kind=workflow_kind,
+                    subject_id=subject_id,
+                    trace_id=handle.trace_id,
+                    note=runtime.error_note,
+                )
         otel_context = _otel_span_context(
             self._otel_tracer,
             name,
@@ -287,10 +473,44 @@ class TraceRecorder:
             with otel_context:
                 yield handle
         except Exception as exc:
-            self._finish_span(handle, error=exc)
+            if handle is not None and handle._runtime_span is not None:
+                handle._runtime_span.close(exc)
+                self._mark_runtime_span_failure(
+                    handle._runtime_span,
+                    workflow_kind=workflow_kind,
+                    subject_id=subject_id,
+                    trace_id=handle.trace_id,
+                )
+            self._finish_span(
+                handle,
+                output_value=(
+                    handle._output_value
+                    if handle is not None and handle._output_value is not _UNSET
+                    else None
+                ),
+                error=exc,
+            )
             raise
         else:
-            self._finish_span(handle)
+            if handle is not None and handle._runtime_span is not None:
+                handle._runtime_span.close()
+                self._mark_runtime_span_failure(
+                    handle._runtime_span,
+                    workflow_kind=workflow_kind,
+                    subject_id=subject_id,
+                    trace_id=handle.trace_id,
+                )
+            self._finish_span(
+                handle,
+                output_value=(
+                    handle._output_value
+                    if handle is not None and handle._output_value is not _UNSET
+                    else None
+                ),
+            )
+        finally:
+            if stack_token is not None:
+                self._active_span_stack.reset(stack_token)
 
     def finish_trace(
         self,
@@ -544,6 +764,31 @@ class TraceRecorder:
             trace_id=trace_id,
             note=note,
         )
+
+    def _mark_runtime_span_failure(
+        self,
+        span: RuntimeSpan,
+        *,
+        workflow_kind: str,
+        subject_id: str,
+        trace_id: str,
+    ) -> None:
+        if span.error_note is None:
+            return
+        self.mark_degraded(
+            workflow_kind=workflow_kind,
+            subject_id=subject_id,
+            trace_id=trace_id,
+            note=span.error_note,
+        )
+
+    def _telemetry_note(self) -> str | None:
+        notes = [
+            note
+            for note in (self._otlp_telemetry_note, self._runtime_setup.note)
+            if note is not None
+        ]
+        return "; ".join(notes) if notes else None
 
     def storage_metrics(self) -> TraceStorageMetrics:
         """Return portable row counts plus best-effort physical database bytes."""
@@ -830,6 +1075,28 @@ def sanitize_trace_attributes(values: dict[str, Any]) -> dict[str, Any]:
                 for item in value[:_MAX_ATTRIBUTE_ITEMS]
             ]
     return result
+
+
+def _runtime_identifier(value: str) -> str:
+    normalized = "".join(
+        character if character.isascii() and (character.isalnum() or character in "._:-") else "-"
+        for character in value
+    ).strip("-._:")
+    if not normalized or not normalized[0].isalnum():
+        normalized = f"span-{hashlib.sha256(value.encode('utf-8')).hexdigest()[:16]}"
+    return normalized[:128]
+
+
+def _runtime_span_type(
+    span_kind: SpanKind,
+) -> Literal["general", "tool", "llm", "guardrail"]:
+    if span_kind == "llm":
+        return "llm"
+    if span_kind in {"external", "persistence"}:
+        return "tool"
+    if span_kind == "validator":
+        return "guardrail"
+    return "general"
 
 
 def _hash_or_none(value: str | None) -> str | None:

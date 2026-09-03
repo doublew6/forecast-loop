@@ -112,6 +112,33 @@ permissions 等基础安全响应头。若改用其他静态托管或反向代�
 
 ## 日志与数据边界
 
+### 私有 Agent runtime trace 路由
+
+Runtime trace policy 必须位于所有 Git worktree 之外且权限为 `0600`。Agent 进程与
+私有 telemetry backend 位于同一运行节点时，policy 只使用 loopback HTTP endpoint，
+并保持 `allow_remote=false`。两者不在同一节点时，只允许经过身份认证的私有网络 HTTPS
+endpoint，同时显式设置 `allow_remote=true`；不得改用裸私网 IP、明文 HTTP 或公网入口。
+
+公开仓库只记录两种通用 policy fragment，不记录真实主机名、端口、凭证或输出路径：
+
+```json
+{"endpoint": "http://127.0.0.1:9000/api", "allow_remote": false}
+```
+
+```json
+{"endpoint": "https://opik.internal.example/api", "allow_remote": true}
+```
+
+上面的值只是结构示例。实际 endpoint、workspace、project、credential、JSONL 输出位置
+和 policy 绝对路径都属于运行主机私有配置。切换运行节点时必须选择与节点位置匹配的
+fragment，并在启动 Agent 前验证 TLS、路由和目标 project；禁止把远程 endpoint 临时写入
+`.env.example`、命令参数、任务输入或日志。
+
+跨节点 smoke 会导出真实根 Input/Output 与 tool I/O，必须先获得对该具体测试载荷和目标
+边界的明确授权。报告只记录运行主机类别（telemetry 同机或外部节点）、endpoint 类型
+（loopback HTTP 或私有网络 HTTPS）、不透明 Opik Trace ID 与 span 结构，不回显 endpoint
+字面值、policy 路径或内容。
+
 - API 不记录 `Authorization` header；反向代理也应屏蔽该 header，并对查询
   参数做脱敏。
 - `data/wiki`、`data/handoffs`、`data/user-wiki`、SQLite、checkpoint 和上游只读副本不

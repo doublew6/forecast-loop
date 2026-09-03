@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -9,6 +10,7 @@ from app.config import Settings
 from app.db import Database
 from app.models import AgentTrace, AgentTraceArtifactLink, AgentTraceSpan
 from app.services.agent_tracing import TraceRecorder, _OtelSetup
+from app.services.runtime_trace_bridge import RuntimeBridgeSetup
 from app.services.schema_readiness import migration_config
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -150,6 +152,193 @@ def test_otlp_setup_failure_marks_local_trace_incomplete_without_blocking(
         assert row.telemetry_complete is False
         assert row.attributes["telemetry_note"] == "OTLP setup failed: synthetic"
     database.dispose()
+
+
+def test_private_runtime_bridge_captures_root_io_and_nested_llm_tool_spans(
+    tmp_path, monkeypatch
+) -> None:
+    class FakeSpan:
+        def __init__(self, tracer, name, span_type, input_value, metadata, model, provider):
+            self.tracer = tracer
+            self.record = {
+                "id": f"span-{len(tracer.spans) + 1}",
+                "parent_id": None,
+                "name": name,
+                "type": span_type,
+                "input": input_value,
+                "metadata": metadata,
+                "model": model,
+                "provider": provider,
+            }
+
+        def __enter__(self):
+            self.record["parent_id"] = self.tracer.stack[-1]["id"] if self.tracer.stack else None
+            self.tracer.spans.append(self.record)
+            self.tracer.stack.append(self.record)
+            return self
+
+        def set_output(self, value):
+            self.record["output"] = value
+
+        def set_usage(self, value, *, total_cost=None):
+            self.record["usage"] = value
+            self.record["total_cost"] = total_cost
+
+        def __exit__(self, exc_type, _exc, _traceback):
+            assert self.tracer.stack.pop() is self.record
+            self.record["status"] = "error" if exc_type else "ok"
+
+    class FakeRuntimeTracer:
+        instances = []
+
+        def __init__(self, policy_path, *, name, prompt, metadata, tags):
+            self.policy_path = policy_path
+            self.name = name
+            self.prompt = prompt
+            self.metadata = metadata
+            self.tags = tags
+            self.trace_id = "runtime-trace-1"
+            self.output = None
+            self.spans = []
+            self.stack = []
+            self.receipt = None
+            self.instances.append(self)
+
+        def __enter__(self):
+            return self
+
+        def span(self, name, *, type, input, metadata, model, provider):
+            return FakeSpan(self, name, type, input, metadata, model, provider)
+
+        def set_output(self, value):
+            self.output = value
+
+        def __exit__(self, _exc_type, _exc, _traceback):
+            self.receipt = SimpleNamespace(
+                stored=True,
+                delivered=True,
+                external_id=self.trace_id,
+                error_code=None,
+            )
+
+    policy_path = tmp_path / "private-policy.json"
+    monkeypatch.setattr(
+        "app.services.agent_tracing.build_runtime_bridge",
+        lambda _path: RuntimeBridgeSetup(FakeRuntimeTracer, policy_path, True),
+    )
+    settings = _settings(tmp_path).model_copy(
+        update={"agent_runtime_trace_policy": policy_path}
+    )
+    database = Database(settings.database_url)
+    database.create_all()
+    recorder = TraceRecorder(database, settings)
+    root_input = {"task": "controlled forecast", "evidence": ["fact-a"]}
+    root_output = {"answer": "up", "confidence": 0.61}
+
+    with recorder.execution(
+        workflow_kind="prediction",
+        subject_id="runtime-run-1",
+        mode="controlled",
+        input_hash="sealed-input",
+        input_value=root_input,
+        name="forecast-loop.prediction.run",
+    ) as execution:
+        with recorder.span(
+            workflow_kind="prediction",
+            subject_id="runtime-run-1",
+            trace_id=execution.trace_id,
+            node_id="agent.research",
+            name="research agent",
+            span_kind="agent",
+        ):
+            with recorder.span(
+                workflow_kind="prediction",
+                subject_id="runtime-run-1",
+                trace_id=execution.trace_id,
+                node_id="provider.research",
+                name="model dispatch",
+                span_kind="llm",
+                model_name="model-a",
+                input_value={"prompt": "model task"},
+                attributes={"provider": "provider-a"},
+            ) as llm:
+                assert llm is not None
+                llm.set_output({"draft": "up"})
+                llm.set_usage({"input_tokens": 4, "output_tokens": 2})
+            with recorder.span(
+                workflow_kind="prediction",
+                subject_id="runtime-run-1",
+                trace_id=execution.trace_id,
+                node_id="tool.persist",
+                name="persist forecast",
+                span_kind="persistence",
+                input_value={"forecast": "up"},
+            ) as tool:
+                assert tool is not None
+                tool.set_output({"stored": True})
+        execution.set_output(root_output)
+
+    runtime = FakeRuntimeTracer.instances[0]
+    assert runtime.prompt == root_input
+    assert runtime.output == root_output
+    assert [span["type"] for span in runtime.spans] == ["general", "llm", "tool"]
+    assert runtime.spans[1]["parent_id"] == runtime.spans[0]["id"]
+    assert runtime.spans[2]["parent_id"] == runtime.spans[0]["id"]
+    assert runtime.spans[1]["output"] == {"draft": "up"}
+    assert runtime.spans[1]["usage"]["input_tokens"] == 4
+
+    with database.session_factory() as session:
+        trace = session.scalar(
+            select(AgentTrace).where(AgentTrace.subject_id == "runtime-run-1")
+        )
+        assert trace is not None
+        assert trace.status == "completed"
+        assert trace.attributes["external_receipt"] is True
+        assert "controlled forecast" not in str(trace.attributes)
+        spans = session.scalars(
+            select(AgentTraceSpan)
+            .where(AgentTraceSpan.trace_id == trace.id)
+            .order_by(AgentTraceSpan.started_at)
+        ).all()
+        assert all(span.input_digest is None or len(span.input_digest) == 64 for span in spans)
+        assert all(span.output_digest is None or len(span.output_digest) == 64 for span in spans)
+        assert "model task" not in str([span.attributes for span in spans])
+    database.dispose()
+
+
+def test_workflow_entry_records_real_model_dispatch_and_persistence_hierarchy(client) -> None:
+    workflow = client.app.state.workflow
+    workflow.provider.trace_span_kind = "llm"
+    prepared = workflow.prepare_run(
+        as_of=datetime.fromisoformat("2026-07-09T15:00:00+08:00")
+    )
+
+    completed = workflow.execute_prepared(prepared)
+
+    assert completed.status == "completed"
+    database = client.app.state.database
+    with database.session_factory() as session:
+        trace = session.scalar(
+            select(AgentTrace).where(AgentTrace.subject_id == prepared.row.id)
+        )
+        assert trace is not None and trace.status == "completed"
+        spans = session.scalars(
+            select(AgentTraceSpan).where(AgentTraceSpan.trace_id == trace.id)
+        ).all()
+    by_id = {span.span_id: span for span in spans}
+    root = next(span for span in spans if span.node_id == "workflow.execute")
+    model_spans = [span for span in spans if span.node_id.startswith("provider.")]
+    persistence = next(span for span in spans if span.node_id == "workflow.persist_result")
+    freeze = next(span for span in spans if span.node_id == "node.freeze_snapshot")
+
+    assert model_spans and all(span.span_kind == "llm" for span in model_spans)
+    assert all(span.input_digest and span.output_digest for span in model_spans)
+    assert all(by_id[span.parent_span_id].span_kind == "agent" for span in model_spans)
+    assert all(by_id[span.parent_span_id].parent_span_id == root.span_id for span in model_spans)
+    assert persistence.span_kind == "persistence"
+    assert persistence.parent_span_id is None
+    assert freeze.span_kind == "external"
+    assert freeze.parent_span_id == root.span_id
 
 
 def test_otlp_span_start_failure_downgrades_local_trace_and_business_continues(

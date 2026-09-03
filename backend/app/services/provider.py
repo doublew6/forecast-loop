@@ -24,6 +24,7 @@ CODEX_FILE_PROVIDER_NAME = "codex-file-handoff-v3"
 class ResearchProvider(Protocol):
     name: str
     prompt_version: str
+    trace_span_kind: str
 
     def research(
         self,
@@ -67,6 +68,7 @@ class BlockedLiveProvider:
     reason: str
     name: str = "blocked-live-provider"
     prompt_version: str = "blocked"
+    trace_span_kind: str = "llm"
 
     def research(self, **_) -> AgentDraft:
         raise RuntimeError(self.reason)
@@ -85,6 +87,7 @@ class AwaitingCodexFileProvider(BlockedLiveProvider):
     reason: str = "Codex file mode only runs through scripts/codex_handoff.py."
     name: str = CODEX_FILE_PROVIDER_NAME
     prompt_version: str = CODEX_FILE_PROVIDER_NAME
+    trace_span_kind: str = "external"
 
     def model_name_for_agent(self, agent_id: str) -> str:
         del agent_id
@@ -97,6 +100,7 @@ class DeterministicDemoProvider:
 
     name: str = "deterministic-binary-demo-v3"
     prompt_version: str = "deterministic-binary-demo-v3"
+    trace_span_kind: str = "general"
 
     def research(
         self,
@@ -266,6 +270,7 @@ class LangChainResearchProvider:
 
     name = "langchain-openai-compatible"
     prompt_version = "research-agent-v5"
+    trace_span_kind = "llm"
 
     def __init__(self, settings: Settings) -> None:
         self.model = ChatOpenAI(

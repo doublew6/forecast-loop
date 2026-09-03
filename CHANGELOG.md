@@ -24,6 +24,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
   advisory reasoning reviews, diagnostic ablations, and bad-case feedback.
 - Attempt-level sanitized traces with artifact links, immutable terminal seals,
   cursor pagination, filters, and storage monitoring.
+- An opt-in private runtime-trace bridge that records the real task input and
+  final forecast at the root, nests model and tool calls, and keeps all raw
+  content outside the public trace store.
 - Read-only v2 research, forecast, scorecard, reasoning-review, evaluation, and
   trace views in the API and frontend.
 - Public-boundary checks for staged files, commit messages, complete reachable
@@ -33,6 +36,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Runtime tracing deployment guidance now distinguishes same-node loopback
+  delivery from explicitly authorized private-network HTTPS delivery, without
+  publishing operator endpoints or policy paths.
 - The primary dashboard and scorecard views now separate formal D1 decisions,
   W1 shadow research, natural-horizon views, reasoning quality, and incremental
   contribution instead of presenting a cross-horizon overall ranking.

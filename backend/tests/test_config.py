@@ -28,3 +28,9 @@ def test_user_judgment_market_open_loads_from_environment(
     monkeypatch.setenv("VERICOUNCIL_USER_JUDGMENT_MARKET_OPEN", "08:45")
 
     assert Settings().user_judgment_market_open == time(8, 45)
+
+
+def test_blank_private_runtime_trace_policy_is_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("FORECAST_LOOP_AGENT_RUNTIME_TRACE_POLICY", "  ")
+
+    assert Settings().agent_runtime_trace_policy is None

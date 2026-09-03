@@ -115,6 +115,10 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
     )
+    agent_runtime_trace_policy: Path | None = Field(
+        default=None,
+        validation_alias="FORECAST_LOOP_AGENT_RUNTIME_TRACE_POLICY",
+    )
     agent_trace_external_url: str | None = Field(
         default=None,
         validation_alias="FORECAST_LOOP_AGENT_TRACE_EXTERNAL_URL",
@@ -226,6 +230,7 @@ class Settings(BaseSettings):
         "evidence_snapshot_builder",
         "market_outcome_snapshot_builder",
         "market_universe_path",
+        "agent_runtime_trace_policy",
         mode="before",
     )
     @classmethod
