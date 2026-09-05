@@ -813,6 +813,8 @@ def evaluate_premarket_forecast(
     *,
     evaluated_at: datetime,
 ) -> PremarketEvaluationV1:
+    if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
+        raise ValueError("evaluated_at must be timezone-aware")
     if outcome.forecast_hash != forecast.content_hash:
         raise ValueError("outcome does not bind the forecast")
     if (
@@ -820,6 +822,21 @@ def evaluate_premarket_forecast(
         or outcome.target_session != forecast.target_session
     ):
         raise ValueError("outcome sessions do not match the forecast")
+    zone = ZoneInfo(PREMARKET_TIMEZONE)
+    maturity = datetime.combine(
+        forecast.target_session,
+        time(9, 30),
+        tzinfo=zone,
+    )
+    source_observed_at = outcome.source.observed_at.astimezone(zone)
+    outcome_observed_at = outcome.observed_at.astimezone(zone)
+    accepted_at = evaluated_at.astimezone(zone)
+    if source_observed_at < maturity:
+        raise ValueError("outcome source predates the target-session open")
+    if outcome_observed_at < maturity:
+        raise ValueError("outcome observation predates the target-session open")
+    if outcome_observed_at > accepted_at:
+        raise ValueError("outcome observation follows evaluation acceptance")
     realized = outcome.end_open / outcome.start_open - 1.0
     if realized > forecast.threshold:
         actual: Literal["up", "neutral", "down"] = "up"

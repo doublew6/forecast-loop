@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ..config import REPOSITORY_ROOT, Settings
 from ..premarket import (
     PREMARKET_HANDOFF_SCHEMA_V1,
+    PREMARKET_TIMEZONE,
     PremarketDraftBundleV1,
     PremarketEvaluationV1,
     PremarketEvidenceSnapshotV1,
@@ -116,18 +117,31 @@ def prepare_premarket_run(
             f"{snapshot.forecast_session.isoformat()}:{snapshot.content_hash}",
         )
     )
+    root = _handoff_root(settings)
+    job_dir = root / run_id
+    if job_dir.exists() or job_dir.is_symlink():
+        existing_dir = _validated_job_dir(settings, job_dir)
+        existing = _read_model(existing_dir / "input.json", PremarketHandoffV1)
+        if (
+            existing.prepared_at > prepared_at
+            or existing.prepared_at >= snapshot.finalization_deadline
+        ):
+            raise PremarketServiceError(
+                "existing premarket handoff has invalid preparation time"
+            )
+        expected = build_premarket_handoff(
+            run_id=run_id,
+            snapshot=snapshot,
+            prepared_at=existing.prepared_at,
+        )
+        if existing.request_hash != expected.request_hash:
+            raise PremarketServiceError("existing premarket handoff has different content")
+        return existing_dir
     handoff = build_premarket_handoff(
         run_id=run_id,
         snapshot=snapshot,
         prepared_at=prepared_at,
     )
-    root = _handoff_root(settings)
-    job_dir = root / run_id
-    if job_dir.exists():
-        existing = _read_model(job_dir / "input.json", PremarketHandoffV1)
-        if existing.request_hash != handoff.request_hash:
-            raise PremarketServiceError("existing premarket handoff has different content")
-        return job_dir
     job_dir.mkdir(mode=0o700)
     _atomic_write(job_dir / "input.json", canonical_json(handoff), mode=0o400)
     template = {
@@ -303,7 +317,10 @@ def load_premarket_forecast(
     job_dir: Path,
 ) -> PremarketForecastV1:
     job_dir = _validated_job_dir(settings, job_dir)
-    return _read_model(job_dir / "forecast.json", PremarketForecastV1)
+    return _read_completed_premarket_forecast(
+        job_dir,
+        job_name=job_dir.name,
+    )
 
 
 def evaluate_premarket_run(
@@ -315,24 +332,73 @@ def evaluate_premarket_run(
 ) -> PremarketEvaluationV1:
     """Seal one externally collected open-to-open outcome and its score."""
 
-    job_dir = _validated_job_dir(settings, job_dir)
-    forecast = _read_model(job_dir / "forecast.json", PremarketForecastV1)
     outcome = _read_model(outcome_path, PremarketOutcomeV1)
     evaluated_at = now or datetime.now(ZoneInfo(settings.timezone))
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
         raise PremarketServiceError("premarket evaluation time must be timezone-aware")
-    evaluation = evaluate_premarket_forecast(
-        forecast,
-        outcome,
-        evaluated_at=evaluated_at,
-    )
-    _write_or_match(job_dir / "outcome.json", outcome, PremarketOutcomeV1)
-    _write_or_match(
-        job_dir / "evaluation.json",
-        evaluation,
-        PremarketEvaluationV1,
-    )
-    return evaluation
+    evaluated_at = evaluated_at.astimezone(ZoneInfo(PREMARKET_TIMEZONE))
+    with _locked_premarket_job(settings, job_dir) as (resolved, directory_fd):
+        forecast = _read_completed_premarket_forecast_at(
+            directory_fd,
+            job_name=resolved.name,
+        )
+        outcome_exists = _artifact_exists_at(directory_fd, "outcome.json")
+        evaluation_exists = _artifact_exists_at(directory_fd, "evaluation.json")
+        if evaluation_exists and not outcome_exists:
+            raise PremarketServiceError("premarket evaluation exists without outcome")
+
+        if outcome_exists:
+            sealed_outcome = _read_model_at(
+                directory_fd,
+                "outcome.json",
+                PremarketOutcomeV1,
+            )
+            if sealed_outcome.content_hash != outcome.content_hash:
+                raise PremarketServiceError("existing outcome.json has different content")
+        else:
+            sealed_outcome = outcome
+
+        if evaluation_exists:
+            existing = _read_model_at(
+                directory_fd,
+                "evaluation.json",
+                PremarketEvaluationV1,
+            )
+            reproduced = _evaluate_premarket_forecast_or_error(
+                forecast,
+                sealed_outcome,
+                evaluated_at=existing.evaluated_at,
+            )
+            if existing.content_hash != reproduced.content_hash:
+                raise PremarketServiceError("premarket evaluation does not reproduce")
+            return existing
+
+        evaluation = _evaluate_premarket_forecast_or_error(
+            forecast,
+            sealed_outcome,
+            evaluated_at=evaluated_at,
+        )
+        if not outcome_exists:
+            _atomic_write_at(
+                directory_fd,
+                "outcome.json",
+                canonical_json(sealed_outcome),
+                mode=0o400,
+            )
+        _atomic_write_at(
+            directory_fd,
+            "evaluation.json",
+            canonical_json(evaluation),
+            mode=0o400,
+        )
+        sealed_evaluation = _read_model_at(
+            directory_fd,
+            "evaluation.json",
+            PremarketEvaluationV1,
+        )
+        if sealed_evaluation.content_hash != evaluation.content_hash:
+            raise PremarketServiceError("written premarket evaluation has different content")
+        return sealed_evaluation
 
 
 def load_premarket_history(
@@ -358,16 +424,16 @@ def load_premarket_history(
         evaluation_path = job_dir / "evaluation.json"
         if not evaluation_path.exists():
             continue
-        forecast_path = job_dir / "forecast.json"
         outcome_path = job_dir / "outcome.json"
-        if not forecast_path.exists() or not outcome_path.exists():
+        if not outcome_path.exists():
             raise PremarketServiceError("evaluated premarket job is incomplete")
-        forecast = _read_model(forecast_path, PremarketForecastV1)
+        forecast = _read_completed_premarket_forecast(
+            job_dir,
+            job_name=job_dir.name,
+        )
         outcome = _read_model(outcome_path, PremarketOutcomeV1)
         evaluation = _read_model(evaluation_path, PremarketEvaluationV1)
-        if forecast.run_id != job_dir.name:
-            raise PremarketServiceError("premarket job directory does not match run_id")
-        reproduced = evaluate_premarket_forecast(
+        reproduced = _evaluate_premarket_forecast_or_error(
             forecast,
             outcome,
             evaluated_at=evaluation.evaluated_at,
@@ -425,15 +491,6 @@ def load_premarket_history(
     return history
 
 
-def _write_or_match(path: Path, value, model_type) -> None:
-    if path.exists():
-        existing = _read_model(path, model_type)
-        if existing.content_hash != value.content_hash:
-            raise PremarketServiceError(f"existing {path.name} has different content")
-        return
-    _atomic_write(path, canonical_json(value), mode=0o400)
-
-
 def _build_premarket_receipt(forecast: PremarketForecastV1) -> _PremarketReceiptV1:
     body = _PremarketReceiptBodyV1(
         schema_version=PREMARKET_RECEIPT_SCHEMA_V1,
@@ -455,7 +512,7 @@ def build_premarket_brief(
 ) -> PremarketBrief:
     job_dir = _validated_job_dir(settings, job_dir)
     handoff = _read_model(job_dir / "input.json", PremarketHandoffV1)
-    forecast = _read_model(job_dir / "forecast.json", PremarketForecastV1)
+    forecast = load_premarket_forecast(settings, job_dir=job_dir)
     direction = {"up": "上涨", "neutral": "小幅波动", "down": "下跌"}[forecast.direction]
     risk = {"none": "无", "low": "低", "medium": "中", "high": "高"}[forecast.risk_severity]
     grouped = []
@@ -654,6 +711,94 @@ def _finalize_forecast_or_error(
         )
     except ValueError as exc:
         raise PremarketServiceError(str(exc)) from exc
+
+
+def _evaluate_premarket_forecast_or_error(
+    forecast: PremarketForecastV1,
+    outcome: PremarketOutcomeV1,
+    *,
+    evaluated_at: datetime,
+) -> PremarketEvaluationV1:
+    try:
+        return evaluate_premarket_forecast(
+            forecast,
+            outcome,
+            evaluated_at=evaluated_at,
+        )
+    except ValueError as exc:
+        raise PremarketServiceError(str(exc)) from exc
+
+
+def _read_completed_premarket_forecast_at(
+    directory_fd: int,
+    *,
+    job_name: str,
+) -> PremarketForecastV1:
+    handoff = _read_model_at(
+        directory_fd,
+        "input.json",
+        PremarketHandoffV1,
+    )
+    drafts = _read_model_at(
+        directory_fd,
+        "drafts.json",
+        PremarketDraftBundleV1,
+    )
+    forecast = _read_model_at(
+        directory_fd,
+        "forecast.json",
+        PremarketForecastV1,
+    )
+    _validate_completed_premarket_forecast(
+        handoff,
+        drafts,
+        forecast,
+        job_name=job_name,
+    )
+    _validate_premarket_receipt_at(
+        directory_fd,
+        "receipt.json",
+        forecast,
+    )
+    return forecast
+
+
+def _read_completed_premarket_forecast(
+    job_dir: Path,
+    *,
+    job_name: str,
+) -> PremarketForecastV1:
+    handoff = _read_model(job_dir / "input.json", PremarketHandoffV1)
+    drafts = _read_model(job_dir / "drafts.json", PremarketDraftBundleV1)
+    forecast = _read_model(job_dir / "forecast.json", PremarketForecastV1)
+    _validate_completed_premarket_forecast(
+        handoff,
+        drafts,
+        forecast,
+        job_name=job_name,
+    )
+    _validate_premarket_receipt(job_dir / "receipt.json", forecast)
+    return forecast
+
+
+def _validate_completed_premarket_forecast(
+    handoff: PremarketHandoffV1,
+    drafts: PremarketDraftBundleV1,
+    forecast: PremarketForecastV1,
+    *,
+    job_name: str,
+) -> None:
+    if handoff.run_id != job_name or forecast.run_id != job_name:
+        raise PremarketServiceError("premarket job directory does not match run_id")
+    reproduced = _finalize_forecast_or_error(
+        handoff,
+        drafts,
+        accepted_at=forecast.created_at,
+    )
+    if reproduced.content_hash != forecast.content_hash:
+        raise PremarketServiceError(
+            "completed premarket forecast has different content"
+        )
 
 
 @contextmanager
@@ -994,6 +1139,16 @@ def _validate_premarket_receipt_at(
     forecast: PremarketForecastV1,
 ) -> None:
     existing = _read_model_at(directory_fd, name, _PremarketReceiptV1)
+    expected = _build_premarket_receipt(forecast)
+    if existing.model_dump(mode="json") != expected.model_dump(mode="json"):
+        raise PremarketServiceError("existing premarket receipt does not match forecast")
+
+
+def _validate_premarket_receipt(
+    path: Path,
+    forecast: PremarketForecastV1,
+) -> None:
+    existing = _read_model(path, _PremarketReceiptV1)
     expected = _build_premarket_receipt(forecast)
     if existing.model_dump(mode="json") != expected.model_dump(mode="json"):
         raise PremarketServiceError("existing premarket receipt does not match forecast")

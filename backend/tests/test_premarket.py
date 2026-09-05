@@ -23,6 +23,7 @@ from app.premarket import (
     HistoricalOpenV1,
     PremarketAgentDraftV1,
     PremarketDraftBundleV1,
+    PremarketEvaluationV1,
     PremarketEvidenceItemV1,
     PremarketEvidenceSnapshotBodyV1,
     PremarketForecastV1,
@@ -46,6 +47,7 @@ from app.services.premarket import (
     build_premarket_brief,
     evaluate_premarket_run,
     finalize_premarket_run,
+    load_premarket_forecast,
     load_premarket_history,
     prepare_premarket_run,
 )
@@ -181,6 +183,42 @@ def _snapshot_body() -> PremarketEvidenceSnapshotBodyV1:
         ],
         wiki_references=wiki,
     )
+
+
+def _shifted_snapshot_body(days: int) -> PremarketEvidenceSnapshotBodyV1:
+    payload = _snapshot_body().model_dump(mode="python")
+    delta = timedelta(days=days)
+    for field in ("previous_session", "forecast_session", "target_session"):
+        payload[field] += delta
+    for field in (
+        "evidence_start",
+        "evidence_cutoff",
+        "decision_time",
+        "finalization_deadline",
+        "created_at",
+    ):
+        payload[field] += delta
+    payload["calendar_source"]["sessions"] = [
+        session + delta for session in payload["calendar_source"]["sessions"]
+    ]
+    payload["calendar_source"]["source_hash"] = content_hash(
+        {
+            "schema_version": "forecast-loop.premarket-calendar/v1",
+            "sessions": payload["calendar_source"]["sessions"],
+        }
+    )
+    for field in ("observed_at", "ingested_at"):
+        payload["calendar_source"][field] += delta
+    for item in payload["open_history"]:
+        item["trade_date"] += delta
+        item["source"]["observed_at"] += delta
+        item["source"]["ingested_at"] += delta
+    for item in payload["items"]:
+        for field in ("published_at", "observed_at", "ingested_at"):
+            item[field] += delta
+    for item in payload["wiki_references"]:
+        item["published_at"] += delta
+    return PremarketEvidenceSnapshotBodyV1.model_validate(payload)
 
 
 def _draft_bundle(handoff) -> PremarketDraftBundleV1:
@@ -361,6 +399,72 @@ def test_open_to_open_forecast_and_evaluation_form_a_sealed_episode() -> None:
     assert evaluation.actual_label == "up"
     assert evaluation.direction_correct is True
     assert math.isclose(evaluation.realized_return, 0.02)
+
+
+def test_evaluation_rejects_outcome_before_target_open() -> None:
+    snapshot = seal_premarket_snapshot(_snapshot_body())
+    handoff = build_premarket_handoff(
+        run_id="run-2026-08-18",
+        snapshot=snapshot,
+        prepared_at=datetime(2026, 8, 18, 9, 12, tzinfo=ZONE),
+    )
+    forecast = finalize_premarket_forecast(
+        handoff,
+        _draft_bundle(handoff),
+        accepted_at=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    observed_at = datetime(2026, 8, 18, 9, 21, tzinfo=ZONE)
+    outcome = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=forecast.content_hash,
+            forecast_session=FORECAST,
+            target_session=TARGET,
+            start_open=100.0,
+            end_open=102.0,
+            observed_at=observed_at,
+            source=_source("early-outcome", observed_at - timedelta(seconds=10)),
+        )
+    )
+
+    with pytest.raises(ValueError, match="target-session open"):
+        evaluate_premarket_forecast(
+            forecast,
+            outcome,
+            evaluated_at=observed_at,
+        )
+
+
+def test_evaluation_rejects_outcome_observed_after_acceptance() -> None:
+    snapshot = seal_premarket_snapshot(_snapshot_body())
+    handoff = build_premarket_handoff(
+        run_id="run-2026-08-18",
+        snapshot=snapshot,
+        prepared_at=datetime(2026, 8, 18, 9, 12, tzinfo=ZONE),
+    )
+    forecast = finalize_premarket_forecast(
+        handoff,
+        _draft_bundle(handoff),
+        accepted_at=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    observed_at = datetime(2026, 8, 19, 9, 31, tzinfo=ZONE)
+    outcome = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=forecast.content_hash,
+            forecast_session=FORECAST,
+            target_session=TARGET,
+            start_open=100.0,
+            end_open=102.0,
+            observed_at=observed_at,
+            source=_source("future-outcome", observed_at - timedelta(seconds=10)),
+        )
+    )
+
+    with pytest.raises(ValueError, match="follows evaluation acceptance"):
+        evaluate_premarket_forecast(
+            forecast,
+            outcome,
+            evaluated_at=observed_at - timedelta(seconds=1),
+        )
 
 
 def test_finalize_recovers_missing_receipt_from_verified_forecast(tmp_path: Path) -> None:
@@ -645,6 +749,122 @@ def test_finalize_rechecks_deadline_before_receipt_write(tmp_path: Path) -> None
     assert (job_dir / "forecast.json").is_file()
     assert not (job_dir / "receipt.json").exists()
 
+    with pytest.raises(PremarketServiceError, match="receipt.json"):
+        load_premarket_forecast(settings, job_dir=job_dir)
+    with pytest.raises(PremarketServiceError, match="receipt.json"):
+        build_premarket_brief(settings, job_dir=job_dir)
+
+    forecast = PremarketForecastV1.model_validate_json(
+        (job_dir / "forecast.json").read_bytes()
+    )
+    observed_at = datetime(2026, 8, 19, 9, 31, tzinfo=ZONE)
+    outcome = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=forecast.content_hash,
+            forecast_session=FORECAST,
+            target_session=TARGET,
+            start_open=100.0,
+            end_open=102.0,
+            observed_at=observed_at,
+            source=_source("unsealed-outcome", observed_at - timedelta(seconds=10)),
+        )
+    )
+    outcome_path = tmp_path / "unsealed-outcome.json"
+    outcome_path.write_bytes(canonical_json(outcome))
+    with pytest.raises(PremarketServiceError, match="receipt.json"):
+        evaluate_premarket_run(
+            settings,
+            job_dir=job_dir,
+            outcome_path=outcome_path,
+            now=observed_at,
+        )
+    assert not (job_dir / "outcome.json").exists()
+    assert not (job_dir / "evaluation.json").exists()
+
+    evaluation = evaluate_premarket_forecast(
+        forecast,
+        outcome,
+        evaluated_at=observed_at,
+    )
+    (job_dir / "outcome.json").write_bytes(canonical_json(outcome))
+    (job_dir / "evaluation.json").write_bytes(canonical_json(evaluation))
+    with pytest.raises(PremarketServiceError, match="receipt.json"):
+        load_premarket_history(settings)
+
+
+def test_prepare_reuses_same_snapshot_without_changing_first_handoff(
+    tmp_path: Path,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    input_bytes = (job_dir / "input.json").read_bytes()
+    draft_bytes = (job_dir / "drafts.json").read_bytes()
+
+    repeated = prepare_premarket_run(
+        settings,
+        snapshot_path=tmp_path / "snapshot.json",
+        now=datetime(2026, 8, 18, 9, 13, tzinfo=ZONE),
+    )
+
+    assert repeated == job_dir
+    assert (job_dir / "input.json").read_bytes() == input_bytes
+    assert (job_dir / "drafts.json").read_bytes() == draft_bytes
+
+
+def test_evaluate_rejects_early_outcome_without_publishing_artifacts(
+    tmp_path: Path,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    forecast = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    observed_at = datetime(2026, 8, 18, 9, 21, tzinfo=ZONE)
+    outcome = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=forecast.content_hash,
+            forecast_session=FORECAST,
+            target_session=TARGET,
+            start_open=100.0,
+            end_open=102.0,
+            observed_at=observed_at,
+            source=_source("early-service-outcome", observed_at - timedelta(seconds=10)),
+        )
+    )
+    outcome_path = tmp_path / "early-outcome.json"
+    outcome_path.write_bytes(canonical_json(outcome))
+
+    with pytest.raises(PremarketServiceError, match="target-session open"):
+        evaluate_premarket_run(
+            settings,
+            job_dir=job_dir,
+            outcome_path=outcome_path,
+            now=observed_at,
+        )
+
+    assert not (job_dir / "outcome.json").exists()
+    assert not (job_dir / "evaluation.json").exists()
+
+
+def test_completed_forecast_reader_reproduces_frozen_drafts(tmp_path: Path) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    drafts_path = job_dir / "drafts.json"
+    drafts = json.loads(drafts_path.read_bytes())
+    strategy = next(
+        item for item in drafts["drafts"] if item["agent_id"] == "strategy_agent"
+    )
+    strategy["rationale"] = "Resealed but different strategy rationale."
+    drafts_path.unlink()
+    drafts_path.write_bytes(canonical_json(drafts))
+
+    with pytest.raises(PremarketServiceError, match="different content"):
+        load_premarket_forecast(settings, job_dir=job_dir)
+
 
 def test_finalize_rejects_symlinked_lock_file(tmp_path: Path) -> None:
     settings, job_dir = _prepared_service_job(tmp_path)
@@ -858,7 +1078,17 @@ def test_file_first_service_prepares_finalizes_and_renders_brief(tmp_path) -> No
         outcome_path=outcome_path,
         now=observed_at,
     )
+    evaluation_bytes = (job_dir / "evaluation.json").read_bytes()
+    repeated_evaluation = evaluate_premarket_run(
+        settings,
+        job_dir=job_dir,
+        outcome_path=outcome_path,
+        now=observed_at + timedelta(seconds=1),
+    )
     assert evaluation.actual_label == "up"
+    assert repeated_evaluation.content_hash == evaluation.content_hash
+    assert repeated_evaluation.evaluated_at == evaluation.evaluated_at
+    assert (job_dir / "evaluation.json").read_bytes() == evaluation_bytes
     assert (job_dir / "outcome.json").exists()
     assert (job_dir / "evaluation.json").exists()
 
@@ -869,19 +1099,45 @@ def test_file_first_service_prepares_finalizes_and_renders_brief(tmp_path) -> No
     assert first_history[0]["long_short_cumulative_return"] == pytest.approx(0.02)
     assert load_premarket_history(settings, settled_before=TARGET) == []
 
-    down_payload = forecast.model_dump(mode="json", exclude={"content_hash"})
-    down_payload.update(
-        {
-            "run_id": "down-run",
-            "forecast_session": TARGET.isoformat(),
-            "target_session": (TARGET + timedelta(days=1)).isoformat(),
-            "direction": "down",
-            "probabilities": {"up": 0.20, "neutral": 0.25, "down": 0.55},
-        }
+    down_snapshot = seal_premarket_snapshot(_shifted_snapshot_body(1))
+    down_snapshot_path = tmp_path / "down-snapshot.json"
+    down_snapshot_path.write_bytes(canonical_json(down_snapshot))
+    down_job = prepare_premarket_run(
+        settings,
+        snapshot_path=down_snapshot_path,
+        now=datetime(2026, 8, 19, 9, 12, tzinfo=ZONE),
     )
-    down_forecast = PremarketForecastV1(
-        **down_payload,
-        content_hash=content_hash(down_payload),
+    down_handoff = build_premarket_handoff(
+        run_id=down_job.name,
+        snapshot=down_snapshot,
+        prepared_at=datetime(2026, 8, 19, 9, 12, tzinfo=ZONE),
+    )
+    down_drafts_payload = _draft_bundle(down_handoff).model_dump(mode="json")
+    strategy_draft = next(
+        item
+        for item in down_drafts_payload["drafts"]
+        if item["agent_id"] == "strategy_agent"
+    )
+    strategy_draft["direction"] = "down"
+    strategy_draft["probabilities"] = {
+        "up": 0.20,
+        "neutral": 0.25,
+        "down": 0.55,
+    }
+    down_drafts_payload["generated_at"] = datetime(
+        2026,
+        8,
+        19,
+        9,
+        18,
+        tzinfo=ZONE,
+    ).isoformat()
+    down_drafts = PremarketDraftBundleV1.model_validate(down_drafts_payload)
+    (down_job / "drafts.json").write_bytes(canonical_json(down_drafts))
+    down_forecast = finalize_premarket_run(
+        settings,
+        job_dir=down_job,
+        now=datetime(2026, 8, 19, 9, 20, tzinfo=ZONE),
     )
     down_observed_at = datetime(2026, 8, 20, 9, 31, tzinfo=ZONE)
     down_outcome = seal_premarket_outcome(
@@ -899,12 +1155,6 @@ def test_file_first_service_prepares_finalizes_and_renders_brief(tmp_path) -> No
         down_forecast,
         down_outcome,
         evaluated_at=down_observed_at,
-    )
-    down_job = settings.handoff_root / "premarket" / "down-run"
-    down_job.mkdir()
-    (down_job / "forecast.json").write_text(
-        down_forecast.model_dump_json(),
-        encoding="utf-8",
     )
     (down_job / "outcome.json").write_text(
         down_outcome.model_dump_json(),
@@ -926,3 +1176,118 @@ def test_file_first_service_prepares_finalizes_and_renders_brief(tmp_path) -> No
         settled_before=TARGET + timedelta(days=1),
     )
     assert [item["target_session"] for item in available_for_august_20_brief] == [TARGET]
+
+
+def test_evaluate_recovers_existing_outcome_and_serializes_identical_calls(
+    tmp_path: Path,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    forecast = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    observed_at = datetime(2026, 8, 19, 9, 31, tzinfo=ZONE)
+    outcome = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=forecast.content_hash,
+            forecast_session=FORECAST,
+            target_session=TARGET,
+            start_open=100.0,
+            end_open=102.0,
+            observed_at=observed_at,
+            source=_source("recoverable-outcome", observed_at - timedelta(seconds=10)),
+        )
+    )
+    outcome_path = tmp_path / "recoverable-outcome.json"
+    outcome_path.write_bytes(canonical_json(outcome))
+    (job_dir / "outcome.json").write_bytes(canonical_json(outcome))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            evaluate_premarket_run,
+            settings,
+            job_dir=job_dir,
+            outcome_path=outcome_path,
+            now=observed_at,
+        )
+        second = pool.submit(
+            evaluate_premarket_run,
+            settings,
+            job_dir=job_dir,
+            outcome_path=outcome_path,
+            now=observed_at + timedelta(seconds=1),
+        )
+        results = [first.result(timeout=2), second.result(timeout=2)]
+
+    assert results[0].content_hash == results[1].content_hash
+    assert results[0].evaluated_at == results[1].evaluated_at
+    assert PremarketEvaluationV1.model_validate_json(
+        (job_dir / "evaluation.json").read_bytes()
+    ).content_hash == results[0].content_hash
+
+
+def test_evaluate_rejects_conflicting_outcome_and_resealed_evaluation(
+    tmp_path: Path,
+) -> None:
+    settings, job_dir = _prepared_service_job(tmp_path)
+    forecast = finalize_premarket_run(
+        settings,
+        job_dir=job_dir,
+        now=datetime(2026, 8, 18, 9, 20, tzinfo=ZONE),
+    )
+    observed_at = datetime(2026, 8, 19, 9, 31, tzinfo=ZONE)
+    outcome = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=forecast.content_hash,
+            forecast_session=FORECAST,
+            target_session=TARGET,
+            start_open=100.0,
+            end_open=102.0,
+            observed_at=observed_at,
+            source=_source("original-outcome", observed_at - timedelta(seconds=10)),
+        )
+    )
+    outcome_path = tmp_path / "original-outcome.json"
+    outcome_path.write_bytes(canonical_json(outcome))
+    evaluate_premarket_run(
+        settings,
+        job_dir=job_dir,
+        outcome_path=outcome_path,
+        now=observed_at,
+    )
+
+    conflicting = seal_premarket_outcome(
+        PremarketOutcomeBodyV1(
+            forecast_hash=forecast.content_hash,
+            forecast_session=FORECAST,
+            target_session=TARGET,
+            start_open=100.0,
+            end_open=101.0,
+            observed_at=observed_at,
+            source=_source("conflicting-outcome", observed_at - timedelta(seconds=10)),
+        )
+    )
+    conflicting_path = tmp_path / "conflicting-outcome.json"
+    conflicting_path.write_bytes(canonical_json(conflicting))
+    with pytest.raises(PremarketServiceError, match="outcome.json has different content"):
+        evaluate_premarket_run(
+            settings,
+            job_dir=job_dir,
+            outcome_path=conflicting_path,
+            now=observed_at + timedelta(seconds=1),
+        )
+
+    evaluation_path = job_dir / "evaluation.json"
+    tampered = json.loads(evaluation_path.read_bytes())
+    tampered["brier_score"] = 0.0
+    tampered["content_hash"] = content_hash(tampered)
+    evaluation_path.unlink()
+    evaluation_path.write_bytes(canonical_json(tampered))
+    with pytest.raises(PremarketServiceError, match="does not reproduce"):
+        evaluate_premarket_run(
+            settings,
+            job_dir=job_dir,
+            outcome_path=outcome_path,
+            now=observed_at + timedelta(seconds=1),
+        )

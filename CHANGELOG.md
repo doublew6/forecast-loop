@@ -54,6 +54,16 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Pre-market evaluation now rejects outcome sources and observations from before
+  the target-session open, rejects observations newer than evaluation acceptance,
+  and publishes no score artifacts for an immature outcome.
+- Pre-market readers, briefs, notifications, evaluation, and history now require
+  a matching completion receipt, so a forecast-only finalization remnant cannot
+  be consumed as a completed prediction.
+- Retrying pre-market prepare with the same frozen snapshot now reuses the first
+  handoff timestamp and request hash without changing existing drafts.
+- Repeated and concurrent pre-market evaluation now returns the first matching
+  immutable result and safely recovers an outcome-only interrupted write.
 - Interrupted pre-market finalization now recovers a missing receipt only from
   the verified forecast and frozen drafts before the exclusive 09:24 deadline,
   while receipt-only, conflicting, and tampered artifact states fail closed.
