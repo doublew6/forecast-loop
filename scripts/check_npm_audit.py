@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Final
 
 AUDIT_REPORT_VERSION: Final = 2
-EXPECTED_ROUTER_VERSION: Final = "8.3.0"
+EXPECTED_ROUTER_VERSION: Final = "8.3.1"
 EXPECTED_NODE_ENGINE: Final = ">=22.22"
 SEVERITIES: Final = ("info", "low", "moderate", "high", "critical")
 

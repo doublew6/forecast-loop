@@ -4,6 +4,19 @@ forecast-loop 默认是单操作员、私有部署的研究系统，不是面向
 API 和 Web 服务应继续只监听 loopback；上游只读数据、handoff、checkpoint、
 SQLite 与 User Judgment Wiki 也都留在受控的运行节点。
 
+## 依赖与基础镜像更新
+
+安全更新需要同时检查 `uv.lock`、`frontend/package-lock.json` 和后端基础镜像。
+更新 Python 或 npm 包不会更新镜像内的 Debian 系统包；后端镜像继续固定到
+Python 3.12 的明确 patch 版本和完整 SHA-256 digest，由 Dependabot 每周检查
+patch 与 digest 更新。镜像更新后必须重新构建，并通过 Docker smoke 和 Trivy
+容器扫描；已有部署需要重建并重新部署才能应用这些修复。
+
+前端保留全严重级别零漏洞的 npm audit 门槛。React Router 当前审查版本为
+`8.3.1`，升级时应同步修改 `package.json`、锁文件、
+`scripts/check_npm_audit.py` 和对应策略测试，再运行前端测试、构建与安全扫描。
+不要通过忽略漏洞或放宽版本检查来合并依赖更新。
+
 ## 应用层访问规则
 
 Demo 模式用于本地开发，保持无需 token 即可操作。只要
