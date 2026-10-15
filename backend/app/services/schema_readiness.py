@@ -14,7 +14,9 @@ from sqlalchemy.engine import Engine, make_url
 
 from ..config import REPOSITORY_ROOT
 
-ALEMBIC_CONFIG_PATH = REPOSITORY_ROOT / "backend" / "alembic.ini"
+ALEMBIC_CONFIG_PATH = Path(__file__).resolve().parents[1] / "alembic.ini"
+if not ALEMBIC_CONFIG_PATH.is_file():
+    ALEMBIC_CONFIG_PATH = REPOSITORY_ROOT / "backend" / "alembic.ini"
 CORE_TABLES = frozenset(
     {
         "agent_specs",

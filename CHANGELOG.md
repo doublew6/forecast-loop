@@ -54,6 +54,11 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Include Alembic configuration and migration scripts in Python wheels, and use
+  package-local migration resources outside a source checkout. Installed clients
+  can explicitly inspect, upgrade and downgrade databases without a repository
+  or working-directory configuration.
+
 - Interrupted pre-market finalization now recovers a missing receipt only from
   the verified forecast and frozen drafts before the exclusive 09:24 deadline,
   while receipt-only, conflicting, and tampered artifact states fail closed.

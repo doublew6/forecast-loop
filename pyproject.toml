@@ -43,6 +43,10 @@ exclude = ["/.git"]
 [tool.hatch.build.targets.wheel]
 packages = ["backend/app"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"backend/alembic.ini" = "app/alembic.ini"
+"backend/migrations" = "app/migrations"
+
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 pythonpath = ["backend", "."]
