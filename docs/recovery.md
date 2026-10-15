@@ -7,6 +7,13 @@ core tables.
 
 ## Startup and migration order
 
+Python wheels include the Alembic configuration and full migration history.
+Installed commands locate these resources inside the application package; they
+do not require a source checkout or an `alembic.ini` in the working directory.
+Source checkouts keep using `backend/alembic.ini`, and migration helpers retain
+their explicit `config_path` override. Installing or importing the package never
+migrates a database automatically.
+
 For a local process:
 
 ```bash

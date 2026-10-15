@@ -54,6 +54,11 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Include Alembic configuration and migration scripts in Python wheels, and use
+  package-local migration resources outside a source checkout. Installed clients
+  can explicitly inspect, upgrade and downgrade databases without a repository
+  or working-directory configuration.
+
 - Updated locked urllib3, langgraph-sdk, Vitest, brace-expansion, and
   source-map-js dependencies to address published security advisories.
 - Refreshed the pinned Python 3.12 Bookworm container image and added weekly
