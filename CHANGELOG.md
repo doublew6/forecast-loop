@@ -59,6 +59,22 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
   can explicitly inspect, upgrade and downgrade databases without a repository
   or working-directory configuration.
 
+- Updated locked urllib3, langgraph-sdk, Vitest, brace-expansion, and
+  source-map-js dependencies to address published security advisories.
+- Refreshed the pinned Python 3.12 Bookworm container image and added weekly
+  Docker patch/digest update checks so operating-system fixes are tracked.
+- Aligned the reviewed React Router 8.3.1 pin with the frontend security policy
+  while retaining the zero-vulnerability npm audit requirement.
+- Pre-market evaluation now rejects outcome sources and observations from before
+  the target-session open, rejects observations newer than evaluation acceptance,
+  and publishes no score artifacts for an immature outcome.
+- Pre-market readers, briefs, notifications, evaluation, and history now require
+  a matching completion receipt, so a forecast-only finalization remnant cannot
+  be consumed as a completed prediction.
+- Retrying pre-market prepare with the same frozen snapshot now reuses the first
+  handoff timestamp and request hash without changing existing drafts.
+- Repeated and concurrent pre-market evaluation now returns the first matching
+  immutable result and safely recovers an outcome-only interrupted write.
 - Interrupted pre-market finalization now recovers a missing receipt only from
   the verified forecast and frozen drafts before the exclusive 09:24 deadline,
   while receipt-only, conflicting, and tampered artifact states fail closed.

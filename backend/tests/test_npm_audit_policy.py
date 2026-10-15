@@ -38,7 +38,7 @@ def test_zero_vulnerability_report_and_patched_router_are_accepted() -> None:
     assert result == {
         "policy": "forecast-loop.npm-audit-zero/v1",
         "vulnerability_count": 0,
-        "router_version": "8.3.0",
+        "router_version": "8.3.1",
     }
 
 
@@ -71,7 +71,7 @@ def test_router_configuration_uses_patched_direct_package() -> None:
     package = json.loads(
         (REPOSITORY / "frontend" / "package.json").read_text(encoding="utf-8")
     )
-    assert package["dependencies"]["react-router"] == "8.3.0"
+    assert package["dependencies"]["react-router"] == "8.3.1"
     assert "react-router-dom" not in package["dependencies"]
     assert package["engines"]["node"] == ">=22.22"
 

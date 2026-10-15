@@ -79,6 +79,9 @@ Wiki identity 和 09:24 deadline，在排他锁内通过目录 fd 原子写入�
 `forecast.json` 与 `receipt.json`。若进程在两次写入之间中断，09:24 前的重试只有在
 冻结输入和草稿能够精确复现已有 forecast 时才补写 receipt；receipt-only、冲突或篡改
 状态一律拒绝。
+同一快照的 `prepare` 重试复用首次封签的 `prepared_at` 与 request hash，不覆盖已有任务
+或草稿。下游读取、日报、通知、评价和成绩历史只接受带有匹配 receipt 的完整 forecast；
+缺少 receipt 的半成品只能在 deadline 前由 `finalize` 恢复，不能直接进入下一阶段。
 飞书发送按预测交易日和接收者幂等；不同内容不能静默覆盖已发送结果。
 日报反馈只选择 `target_session < 当前 forecast_session` 的最近完整评价，因此盘前发送
 时不会把当天尚未出现的开盘价当成真实结果。没有合格历史时只发送当期预测。
@@ -95,6 +98,11 @@ neutral_band = 0.25 × stdev(last_20_completed_open_to_open_returns)
 20 个历史收益只使用预测日前已经完成的 open-to-open episode。结果按
 `up / neutral / down` 计算多分类 Brier 和方向诊断；结果揭晓后不得改写原快照、
 Agent 草稿或 forecast。
+
+确定性 evaluator 要求 outcome 来源和 outcome 观察时间均不早于目标交易日 09:30，且
+outcome 观察时间不晚于宿主接受评价的时间。相同 forecast/outcome 的重复或并发评价
+返回首次封签结果；若进程只写入 outcome 后中断，下一次调用从该 outcome 恢复，不改变
+首次成功评价的 `evaluated_at` 或哈希。
 
 成绩页从完整封签的 `forecast.json`、`outcome.json` 和 `evaluation.json` 重新验证
 评价链，再按日期生成累计胜率、滚动 20 次胜率和两条复合毛收益曲线：
