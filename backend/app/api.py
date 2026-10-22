@@ -120,6 +120,7 @@ from .services.agent_evaluation_v2 import (
     list_agent_eval_v2_jobs,
 )
 from .services.agent_trace_projection import build_trace_view_projection
+from .services.agent_tracing import sanitize_trace_error_fields
 from .services.evaluation import (
     DemoForecastNotScoredError,
     ForecastAlreadyEvaluatedError,
@@ -391,6 +392,7 @@ def transition_agent_bad_case(
 def list_agent_traces(
     request: Request,
     db: DBSession,
+    response: Response,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     workflow_kind: Annotated[str | None, Query()] = None,
     trace_status: Annotated[str | None, Query(alias="status")] = None,
@@ -401,6 +403,7 @@ def list_agent_traces(
     started_to: Annotated[datetime | None, Query()] = None,
     cursor: Annotated[str | None, Query()] = None,
 ) -> AgentTraceListResponse:
+    response.headers["Cache-Control"] = "no-store"
     statement = (
         select(AgentTrace)
         .options(
@@ -492,7 +495,10 @@ def agent_observability_summary(
 
 
 @router.get("/agent-traces/{trace_id}", response_model=AgentTraceRead)
-def agent_trace_detail(trace_id: str, request: Request, db: DBSession) -> AgentTraceRead:
+def agent_trace_detail(
+    trace_id: str, request: Request, db: DBSession, response: Response
+) -> AgentTraceRead:
+    response.headers["Cache-Control"] = "no-store"
     row = db.scalar(
         select(AgentTrace)
         .options(
@@ -1632,6 +1638,9 @@ def _agent_trace_read(
     spans = []
     if include_spans:
         for span in loaded_spans:
+            error_code, error_summary = sanitize_trace_error_fields(
+                span.error_code, span.error_summary
+            )
             payload = {
                 "span_id": span.span_id,
                 "parent_span_id": span.parent_span_id,
@@ -1656,8 +1665,8 @@ def _agent_trace_read(
                 "input_summary": None,
                 "output_summary": None,
                 "summary": span.summary,
-                "error_code": span.error_code,
-                "error_summary": span.error_summary,
+                "error_code": error_code,
+                "error_summary": error_summary,
                 "attributes": span.attributes or {},
                 "references": [],
             }
@@ -1673,6 +1682,7 @@ def _agent_trace_read(
             if "{trace_id}" in external_url
             else f"{external_url.rstrip('/')}/{row.id}"
         )
+    error_code, error_summary = sanitize_trace_error_fields(row.error_code, row.error_summary)
     return AgentTraceRead(
         id=row.id,
         workflow_kind=row.workflow_kind,
@@ -1688,8 +1698,8 @@ def _agent_trace_read(
         input_hash=row.input_hash,
         trace_policy_version=row.trace_policy_version,
         telemetry_complete=row.telemetry_complete,
-        error_code=row.error_code,
-        error_summary=row.error_summary,
+        error_code=error_code,
+        error_summary=error_summary,
         attributes=row.attributes or {},
         span_count=len(spans) if include_spans else len(loaded_spans),
         spans=spans,

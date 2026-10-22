@@ -54,6 +54,11 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Refresh the Certifi CA bundle and patched uv, Vite, and Vitest versions to
+  satisfy the existing dependency and container security gates.
+- Trace errors now use safe categories and fixed summaries, including when
+  reading historical records. Trace APIs disable response caching, and optional
+  OTLP spans omit raw exception events and traceback data.
 - Include Alembic configuration and migration scripts in Python wheels, and use
   package-local migration resources outside a source checkout. Installed clients
   can explicitly inspect, upgrade and downgrade databases without a repository
