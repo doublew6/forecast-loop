@@ -129,7 +129,7 @@ Trace v2 把一次实际执行尝试作为账本单位。同一 workflow subject
 递增的 `attempt_number`，不会复用或覆盖已结束的 trace。固定层级为运行根节点、预测
 目标、Agent 调用、校验、聚合和持久化；`parent_span_id` 只能指向同一 trace 中已经存在
 的 span。完成、失败或降级均会封签 trace，之后 trace、span 和 artifact link 都不能修改
-或删除。历史 v1 trace 迁移后保留为 attempt 1，仍可原样读取。
+或删除。历史 v1 trace 迁移后保留为 attempt 1，原始封签不改写。
 
 `agent_trace_artifact_links` 只保存 artifact 身份、可选内容 hash 与关系，不复制 artifact
 正文。支持的 artifact 为 signal、forecast、evaluation、reasoning review、Reflection 和
@@ -143,7 +143,19 @@ evidence item ID，可从 Trace 跳转到精确 Wiki section、原始证据或�
 token/cost（可用时）、错误与输入输出 digest。不保存完整 prompt、工具敏感参数、原始
 模型响应或业务正文。完整事实仍由原预测/Reflection 审计包承担。
 
+Trace policy `2.1.0` 的 trace/span 错误只保存受信异常类别与固定摘要，不格式化原始
+异常、校验输入、动态字段位置或异常上下文；未知异常及字符串错误统一显示为 `error`。
+业务调用方仍收到原异常，草稿校验、失败状态和重试规则保持原有语义。
+OTLP span 关闭自动异常事件与异常状态描述，只记录 `ERROR` 状态和安全的错误类别，
+不向 exporter 传入原异常或 traceback。
+
 设置 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 后，同一批 span 会通过 OpenTelemetry OTLP/HTTP 镜像到私有后端。Opik 可以作为可选的自托管后端，但 forecast-loop 不依赖 Opik 才能运行；后端不可用不会阻断正式流程。`FORECAST_LOOP_AGENT_TRACE_EXTERNAL_URL` 只控制前端的外部下钻链接。
+
+Trace 列表与详情 API 对所有版本的错误字段执行同一安全投影，并返回
+`Cache-Control: no-store`。历史原始错误不会再由这些接口返回，但数据库、备份、既有导出及外部遥测中
+已经保存的内容不会被自动清除或重写；如需处置，必须走单独的保留与披露流程。
+升级后重新加载已打开的页面，丢弃浏览器内存中的旧查询结果。本地 trace 存储在本地
+数据库；只有配置 OTLP 后才发送到指定 endpoint，API 投影不会清除该后端的历史副本。
 
 当前版本不自动删除 trace，也不改写历史 trace。历史 prediction 详情页会从其不可变运行
 回执只读投影 Wiki 读取、持久化和引用血缘节点，并标记为

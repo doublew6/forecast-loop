@@ -10,6 +10,7 @@ from app.db import Database
 from app.models import AgentTrace, AgentTraceArtifactLink, AgentTraceSpan
 from app.services.agent_tracing import TraceRecorder, _OtelSetup
 from app.services.schema_readiness import migration_config
+from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -22,6 +23,208 @@ def _settings(tmp_path) -> Settings:
         demo_mode=True,
         auto_seed=False,
     )
+
+
+@pytest.mark.parametrize("error_kind", ["validation", "runtime", "string", "custom", "unprintable"])
+def test_trace_and_span_errors_exclude_untrusted_details(tmp_path, error_kind) -> None:
+    marker = "SYNTHETIC_PRIVATE_ERROR_DETAIL"
+
+    class UnprintableError(RuntimeError):
+        def __str__(self):
+            raise AssertionError("telemetry must not format arbitrary exceptions")
+
+    errors = {
+        "validation": ValidationError.from_exception_data(
+            "SyntheticDraft",
+            [{"type": "string_type", "loc": (marker,), "input": {"text": marker}}],
+        ),
+        "runtime": RuntimeError(marker),
+        "string": marker,
+        "custom": type(marker, (Exception,), {})(marker),
+        "unprintable": UnprintableError(),
+    }
+    error = errors[error_kind]
+    expected_code = {
+        "validation": "ValidationError",
+        "runtime": "RuntimeError",
+        "string": "error",
+        "custom": "error",
+        "unprintable": "RuntimeError",
+    }[error_kind]
+    settings = _settings(tmp_path)
+    database = Database(settings.database_url)
+    database.create_all()
+    recorder = TraceRecorder(database, settings)
+    try:
+        trace_id = recorder.start_trace(
+            workflow_kind="prediction", subject_id="error-input", mode="demo", input_hash=None
+        )
+        assert trace_id is not None
+        now = datetime.now(ZoneInfo(settings.timezone))
+        snapshot = recorder.record_span_snapshot(
+            workflow_kind="prediction",
+            subject_id="error-input",
+            trace_id=trace_id,
+            node_id="snapshot",
+            name="Draft validation",
+            span_kind="validator",
+            started_at=now,
+            completed_at=now,
+            status="failed",
+            error=error,
+        )
+        assert snapshot is not None
+        if isinstance(error, Exception):
+            with pytest.raises(type(error)) as caught:
+                with recorder.span(
+                    workflow_kind="prediction",
+                    subject_id="error-input",
+                    trace_id=trace_id,
+                    node_id="active",
+                    name="Draft validation",
+                    span_kind="validator",
+                ):
+                    raise error
+            assert caught.value is error
+        recorder.finish_trace(
+            workflow_kind="prediction",
+            subject_id="error-input",
+            trace_id=trace_id,
+            status="failed",
+            error=error,
+        )
+        with database.session_factory() as session:
+            trace = session.get(AgentTrace, trace_id)
+            spans = session.scalars(
+                select(AgentTraceSpan).where(AgentTraceSpan.trace_id == trace_id)
+            ).all()
+            assert trace is not None
+            assert len(spans) == (1 if error_kind == "string" else 2)
+            for row in (trace, *spans):
+                assert row.status == "failed"
+                assert row.error_code == expected_code
+                assert row.error_summary and marker not in row.error_summary
+                assert "omitted" in row.error_summary
+            assert trace.trace_policy_version == "2.1.0"
+    finally:
+        database.dispose()
+
+
+def test_trace_api_hides_legacy_error_fields_without_rewriting_history(client) -> None:
+    marker = "SYNTHETIC_LEGACY_ERROR_DETAIL"
+    recorder = client.app.state.trace_recorder
+    database = client.app.state.database
+    trace_id = recorder.start_trace(
+        workflow_kind="prediction", subject_id="legacy-error", mode="demo", input_hash=None
+    )
+    assert trace_id is not None
+    with recorder.span(
+        workflow_kind="prediction",
+        subject_id="legacy-error",
+        trace_id=trace_id,
+        node_id="legacy-span",
+        name="Legacy validator",
+        span_kind="validator",
+    ) as handle:
+        assert handle is not None
+        # Simulate a historical writer before its terminal seal.
+        with database.session_factory() as session:
+            span = session.scalar(
+                select(AgentTraceSpan).where(AgentTraceSpan.span_id == handle.span_id)
+            )
+            assert span is not None
+            span.status = "failed"
+            span.completed_at = datetime.now(ZoneInfo("Asia/Shanghai"))
+            span.error_code = marker
+            span.error_summary = marker
+            session.commit()
+    with database.session_factory() as session:
+        trace = session.get(AgentTrace, trace_id)
+        assert trace is not None
+        trace.status = "failed"
+        trace.completed_at = datetime.now(ZoneInfo("Asia/Shanghai"))
+        trace.trace_policy_version = "2.0.0"
+        trace.error_code = "ValidationError"
+        trace.error_summary = marker
+        session.commit()
+
+    for url in ("/api/agent-traces", f"/api/agent-traces/{trace_id}"):
+        response = client.get(url)
+        assert response.status_code == 200
+        assert marker not in response.text
+        assert response.headers["cache-control"] == "no-store"
+        payload = response.json()
+        trace = payload["items"][0] if "items" in payload else payload
+        assert trace["error_code"] == "ValidationError"
+        assert "omitted" in trace["error_summary"]
+        if "items" not in payload:
+            assert trace["spans"][0]["error_code"] == "error"
+            assert "omitted" in trace["spans"][0]["error_summary"]
+    with database.session_factory() as session:
+        trace = session.get(AgentTrace, trace_id)
+        span = session.scalar(select(AgentTraceSpan).where(AgentTraceSpan.trace_id == trace_id))
+        assert trace is not None and span is not None
+        assert trace.error_summary == span.error_summary == marker
+        assert span.error_code == marker
+        assert trace.trace_policy_version == "2.0.0"
+
+
+def test_otlp_exports_safe_error_category_without_exception_events(tmp_path, monkeypatch) -> None:
+    sdk = pytest.importorskip("opentelemetry.sdk.trace")
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.trace import StatusCode
+
+    exporter = InMemorySpanExporter()
+    provider = sdk.TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(
+        "app.services.agent_tracing._build_otel_tracer",
+        lambda _settings: _OtelSetup(
+            tracer=provider.get_tracer("synthetic-test"), telemetry_complete=True
+        ),
+    )
+    settings = _settings(tmp_path)
+    database = Database(settings.database_url)
+    database.create_all()
+    recorder = TraceRecorder(database, settings)
+    trace_id = recorder.start_trace(
+        workflow_kind="prediction", subject_id="otel-error", mode="demo", input_hash=None
+    )
+    marker = "SYNTHETIC_PRIVATE_EXPORT_DETAIL"
+    error = ValueError(marker)
+    try:
+        with pytest.raises(ValueError) as caught:
+            with recorder.span(
+                workflow_kind="prediction",
+                subject_id="otel-error",
+                trace_id=trace_id,
+                node_id="outer",
+                name="Outer validation",
+                span_kind="validator",
+            ):
+                with recorder.span(
+                    workflow_kind="prediction",
+                    subject_id="otel-error",
+                    trace_id=trace_id,
+                    node_id="inner",
+                    name="Inner validation",
+                    span_kind="validator",
+                ):
+                    raise error
+        assert caught.value is error
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 2
+        for span in spans:
+            assert span.status.status_code == StatusCode.ERROR
+            assert span.status.description is None
+            assert span.attributes["error.type"] == "ValueError"
+            assert not span.events
+            assert marker not in span.to_json()
+        assert recorder.otlp_telemetry_complete is True
+    finally:
+        provider.shutdown()
+        database.dispose()
 
 
 def test_trace_recorder_creates_isolated_attempts_and_hierarchy(tmp_path) -> None:
@@ -156,8 +359,11 @@ def test_otlp_span_start_failure_downgrades_local_trace_and_business_continues(
     tmp_path, monkeypatch
 ) -> None:
     class BrokenTracer:
-        def start_as_current_span(self, _name, *, attributes):
+        def start_as_current_span(
+            self, _name, *, attributes, record_exception, set_status_on_exception
+        ):
             assert attributes is not None
+            assert record_exception is set_status_on_exception is False
             raise RuntimeError("collector unavailable")
 
     settings = _settings(tmp_path).model_copy(

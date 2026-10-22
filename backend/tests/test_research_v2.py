@@ -349,6 +349,40 @@ def test_external_dispatcher_rejects_duplicate_assignment_before_publishing(
         database.dispose()
 
 
+def test_finalize_rejects_private_draft_without_copying_it_to_trace(tmp_path: Path) -> None:
+    settings, database, job_dir, request = _prepared_demo_job(tmp_path)
+    marker = "SYNTHETIC_PRIVATE_RATIONALE"
+    drafts_path = job_dir / "drafts.json"
+    payload = json.loads(drafts_path.read_bytes())
+    payload["drafts"][0]["draft"]["rationale"] = {"text": marker}
+    drafts_path.write_text(json.dumps(payload), encoding="utf-8")
+    try:
+        with pytest.raises(ValidationError):
+            finalize_research_run(
+                database,
+                settings,
+                job_dir=job_dir,
+                now=datetime(2026, 8, 12, 20, 30, tzinfo=TZ),
+            )
+        with database.session_factory() as session:
+            run = session.get(ResearchRunV2, request["run_id"])
+            assert run is not None and run.status == "awaiting_draft"
+            assert session.scalars(select(AgentSignalV2Record)).all() == []
+            assert session.scalars(select(ForecastV2)).all() == []
+            trace = session.scalar(select(AgentTrace).where(AgentTrace.subject_id == run.id))
+            assert trace is not None and trace.status == "failed"
+            assert trace.error_code == "ValidationError"
+            assert trace.error_summary and marker not in trace.error_summary
+            trace_id = trace.id
+        with TestClient(create_app(settings)) as client:
+            response = client.get(f"/api/agent-traces/{trace_id}")
+            assert response.status_code == 200
+            assert marker not in response.text
+        assert not (job_dir / "receipt.json").exists()
+    finally:
+        database.dispose()
+
+
 def test_finalize_rejects_duplicate_assignment_without_persisting(
     tmp_path: Path,
 ) -> None:

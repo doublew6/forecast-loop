@@ -18,6 +18,7 @@ from typing import Any, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -25,9 +26,25 @@ from ..config import Settings
 from ..db import Database
 from ..models import AgentTrace, AgentTraceArtifactLink, AgentTraceSpan
 
-TRACE_POLICY_VERSION = "2.0.0"
+TRACE_POLICY_VERSION = "2.1.0"
 _MAX_ATTRIBUTE_ITEMS = 24
 _MAX_ATTRIBUTE_TEXT = 240
+# Classify by trusted types, never by an exception's message or dynamic class name.
+_TRACE_ERROR_TYPES = {
+    ValidationError: "Schema validation failed; input details omitted.",
+    TimeoutError: "Operation timed out; error details omitted.",
+    ConnectionError: "Connection failed; error details omitted.",
+    PermissionError: "Permission denied; error details omitted.",
+    FileNotFoundError: "Required file not found; error details omitted.",
+    OSError: "I/O operation failed; error details omitted.",
+    TypeError: "Invalid input type; input details omitted.",
+    ValueError: "Invalid input; input details omitted.",
+    RuntimeError: "Execution failed; error details omitted.",
+}
+_TRACE_ERROR_SUMMARIES = {
+    error_type.__name__: summary for error_type, summary in _TRACE_ERROR_TYPES.items()
+}
+_TRACE_ERROR_SUMMARIES["error"] = "Execution failed; error details omitted."
 _ALLOWED_ATTRIBUTES = {
     "agent_count",
     "artifact_count",
@@ -324,10 +341,7 @@ class TraceRecorder:
                         **sanitize_trace_attributes(attributes),
                     }
                 if error is not None:
-                    row.error_code = (
-                        type(error).__name__ if isinstance(error, Exception) else "error"
-                    )
-                    row.error_summary = self._summary(str(error))
+                    row.error_code, row.error_summary = sanitize_trace_error(error)
                 session.commit()
         except Exception:
             return
@@ -365,6 +379,7 @@ class TraceRecorder:
         normalized_end = self._localized(completed_at)
         if normalized_end < normalized_start:
             normalized_end = normalized_start
+        error_code, error_summary = sanitize_trace_error(error)
         try:
             with self.database.session_factory() as session:
                 trace = session.get(AgentTrace, trace_id)
@@ -413,14 +428,8 @@ class TraceRecorder:
                             canonical_digest(output_value) if output_value is not None else None
                         ),
                         summary=self._summary(summary) if summary else None,
-                        error_code=(
-                            type(error).__name__[:120]
-                            if isinstance(error, Exception)
-                            else "error"
-                            if error
-                            else None
-                        ),
-                        error_summary=self._summary(str(error)) if error else None,
+                        error_code=error_code,
+                        error_summary=error_summary,
                         attributes=sanitize_trace_attributes(attributes or {}),
                     )
                 )
@@ -740,8 +749,7 @@ class TraceRecorder:
                 if output_value is not None:
                     row.output_digest = canonical_digest(output_value)
                 if error is not None:
-                    row.error_code = type(error).__name__[:120]
-                    row.error_summary = self._summary(str(error))
+                    row.error_code, row.error_summary = sanitize_trace_error(error)
                 session.commit()
         except Exception:
             return
@@ -797,6 +805,29 @@ class TraceRecorder:
     def _summary(self, value: str) -> str:
         normalized = " ".join(value.split())
         return normalized[: self.settings.agent_trace_summary_max_chars]
+
+
+def sanitize_trace_error_fields(
+    error_code: str | None, error_summary: str | None
+) -> tuple[str | None, str | None]:
+    """Project safe error fields, including for immutable historical records."""
+
+    if error_code is None and error_summary is None:
+        return None, None
+    code = error_code if error_code in _TRACE_ERROR_SUMMARIES else "error"
+    return code, _TRACE_ERROR_SUMMARIES[code]
+
+
+def sanitize_trace_error(error: BaseException | str | None) -> tuple[str | None, str | None]:
+    """Omit messages, validation inputs/context, paths and arbitrary type names."""
+
+    if error is None:
+        return None, None
+    code = next(
+        (error_type.__name__ for error_type in _TRACE_ERROR_TYPES if isinstance(error, error_type)),
+        "error",
+    )
+    return sanitize_trace_error_fields(code, None)
 
 
 def canonical_digest(value: Any) -> str:
@@ -874,7 +905,7 @@ def _build_otel_tracer(settings: Settings) -> _OtelSetup:
             return _OtelSetup(
                 tracer=None,
                 telemetry_complete=False,
-                note=f"OTLP setup failed: {type(exc).__name__}",
+                note=f"OTLP setup failed: {sanitize_trace_error(exc)[0]}",
             )
     try:
         tracer = trace.get_tracer("forecast-loop.agent-tracing", TRACE_POLICY_VERSION)
@@ -883,7 +914,7 @@ def _build_otel_tracer(settings: Settings) -> _OtelSetup:
             tracer=None,
             telemetry_complete=not bool(settings.otlp_traces_endpoint),
             note=(
-                f"OTLP tracer creation failed: {type(exc).__name__}"
+                f"OTLP tracer creation failed: {sanitize_trace_error(exc)[0]}"
                 if settings.otlp_traces_endpoint
                 else None
             ),
@@ -903,22 +934,28 @@ def _otel_span_context(
         yield None
         return
     try:
-        manager = tracer.start_as_current_span(name, attributes=attributes)
+        manager = tracer.start_as_current_span(
+            name, attributes=attributes, record_exception=False, set_status_on_exception=False
+        )
         span = manager.__enter__()
     except Exception as exc:
-        on_failure(f"OTLP span start failed: {type(exc).__name__}")
+        on_failure(f"OTLP span start failed: {sanitize_trace_error(exc)[0]}")
         yield None
         return
     try:
         yield span
     except BaseException as exc:
         try:
-            manager.__exit__(type(exc), exc, exc.__traceback__)
-        except Exception as close_exc:
-            on_failure(f"OTLP span close failed: {type(close_exc).__name__}")
+            from opentelemetry.trace import StatusCode
+
+            span.set_attribute("error.type", sanitize_trace_error(exc)[0])
+            span.set_status(StatusCode.ERROR)
+        except Exception as status_exc:
+            on_failure(f"OTLP span status failed: {sanitize_trace_error(status_exc)[0]}")
         raise
-    else:
+    finally:
         try:
+            # Never expose the original exception or traceback to an exporter.
             manager.__exit__(None, None, None)
         except Exception as exc:
-            on_failure(f"OTLP span close failed: {type(exc).__name__}")
+            on_failure(f"OTLP span close failed: {sanitize_trace_error(exc)[0]}")
