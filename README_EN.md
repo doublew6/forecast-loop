@@ -133,8 +133,8 @@ artifacts.
 
 ## Quick start
 
-You need Python 3.11+, [uv](https://docs.astral.sh/uv/) 0.9.8, and Node.js
-20.19+. Docker uses Python 3.12.13, while CI uses the `uv`-managed Python
+You need Python 3.11+, [uv](https://docs.astral.sh/uv/) 0.13.4, and Node.js
+22.22+. Docker uses Python 3.12.15, while CI uses the `uv`-managed Python
 3.12.12; both use Node.js 22 to reduce environment drift.
 
 ```bash

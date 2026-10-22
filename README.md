@@ -116,8 +116,8 @@ provider 映射留在仓库外，forecast-loop 只接收 source-neutral 的只�
 
 ## Quick start
 
-需要 Python 3.11+、[uv](https://docs.astral.sh/uv/) 0.9.8 和 Node.js 20.19+。
-Docker 使用 3.12.13，CI 使用可由 `uv` 管理安装的 3.12.12；两者均使用 Node.js 22，
+需要 Python 3.11+、[uv](https://docs.astral.sh/uv/) 0.13.4 和 Node.js 22.22+。
+Docker 使用 3.12.15，CI 使用可由 `uv` 管理安装的 3.12.12；两者均使用 Node.js 22，
 以减少环境偏差。
 
 ```bash
