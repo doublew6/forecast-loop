@@ -36,6 +36,8 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Refresh the pinned Python container digest and the transitive Zod dependency
+  to address the OpenSSL and Zod advisories reported by the merge security gate.
 - The primary dashboard and scorecard views now separate formal D1 decisions,
   W1 shadow research, natural-horizon views, reasoning quality, and incremental
   contribution instead of presenting a cross-horizon overall ranking.
