@@ -9,6 +9,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- A keyless first-forecast example that exports and verifies a synthetic run
+  bundle and demonstrates rejection of a tampered export, plus an English
+  usage guide and scoped Context7 documentation configuration.
 - A separate 09:15 pre-market protocol for CSI 1000 open-to-open forecasts,
   with frozen overnight news, global-market and FX/rates evidence, Agent-level
   routing, Wiki bindings, deterministic risk discounting, sealed evaluation,
@@ -33,6 +36,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Refresh the pinned Python container digest, install the fixed Debian OpenSSL
+  packages, and update the transitive Zod dependency to address the advisories
+  reported by the merge security gate.
 - The primary dashboard and scorecard views now separate formal D1 decisions,
   W1 shadow research, natural-horizon views, reasoning quality, and incremental
   contribution instead of presenting a cross-horizon overall ranking.

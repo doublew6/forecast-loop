@@ -4,6 +4,33 @@
 
 > Forecast. Explain. Resolve. Learn.
 
+**把预测、当时的理由和后来的结果放在同一条可核验记录里。**
+
+面向比较人工、量化程序和 AI 预测的研究者：先冻结证据与概率，再到期评价，保留审计记录。
+[英文使用指南](docs/usage/quickstart.md) · [无密钥示例](examples/first_forecast.py) · [适配器示例](examples/README.md)
+
+## 先完成一次预测与审计演示
+
+需要 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/)，此示例不需要 Node.js、模型密钥或行情账号：
+
+```bash
+git clone https://github.com/doublew6/forecast-loop.git
+cd forecast-loop
+uv sync --frozen
+uv run python examples/first_forecast.py
+```
+
+示例在临时目录中创建数据库，用确定性 Demo provider 生成预测，导出并核验结果，
+再修改导出副本以确认完整性检查会拒绝篡改。最后输出包含：
+
+```json
+{"mode": "demo", "status": "completed", "artifacts_verified": 3, "tamper_rejected": true}
+```
+
+全部数据与生成的预测仅供演示，退出后清理临时目录；不读取仓库 `.env`，不调用模型或行情服务。
+Demo 不参与正式成绩，哈希校验也不证明预测准确。真实结果评价、数据许可和部署前提见
+[使用指南](docs/usage/quickstart.md)。
+
 forecast-loop 是一个**可验证的预测 Agent 框架**。预测信号可以由人直接输入，也可以由
 确定性量化程序或 AI 模型生成；无论来源如何，都要遵守同一套事前封签、证据冻结、
 到期评价和审计规则。
