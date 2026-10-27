@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Auditable forecasting framework for manual, quantitative, and AI agents"
 readme = "README.md"
 license = "Apache-2.0"
-keywords = ["forecasting", "audit", "multi-agent", "research"]
+keywords = ["forecasting", "audit", "multi-agent", "research", "forecast-evaluation", "probabilistic-forecasting", "auditability", "ai-agents"]
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.14,<2",
@@ -18,6 +18,12 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.34,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/doublew6/forecast-loop"
+Repository = "https://github.com/doublew6/forecast-loop"
+Documentation = "https://github.com/doublew6/forecast-loop/blob/main/docs/usage/quickstart.md"
+Issues = "https://github.com/doublew6/forecast-loop/issues"
 
 [project.scripts]
 forecast-loop = "app.cli:main"

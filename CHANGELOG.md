@@ -9,6 +9,9 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- A keyless first-forecast example that exports and verifies a synthetic run
+  bundle and demonstrates rejection of a tampered export, plus an English
+  usage guide and scoped Context7 documentation configuration.
 - A separate 09:15 pre-market protocol for CSI 1000 open-to-open forecasts,
   with frozen overnight news, global-market and FX/rates evidence, Agent-level
   routing, Wiki bindings, deterministic risk discounting, sealed evaluation,
