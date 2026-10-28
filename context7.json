@@ -4,5 +4,5 @@
   "description": "Auditable forecasting framework for human, quantitative, and AI signals with frozen evidence, probability scoring, and verifiable run bundles.",
   "folders": ["docs/usage", "examples"],
   "excludeFolders": ["backend", "frontend", "data", "jobs", "wiki", "lessons", "reflections"],
-  "excludeFiles": ["AGENTS.md", "README.md", "CHANGELOG.md", "CODE_OF_CONDUCT.md"]
+  "excludeFiles": ["AGENTS.md", "CHANGELOG.md", "CODE_OF_CONDUCT.md"]
 }
