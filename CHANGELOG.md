@@ -60,6 +60,10 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Keep the canonical Chinese README eligible for Context7 indexing so it can
+  parse documentation matching the library language. Removing the filename-wide
+  README exclusion also restores the public adapter examples to the scan scope.
+
 - Refresh the Certifi CA bundle and patched uv, Vite, and Vitest versions to
   satisfy the existing dependency and container security gates.
 - Trace errors now use safe categories and fixed summaries, including when
