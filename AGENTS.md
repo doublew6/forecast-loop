@@ -40,6 +40,16 @@
 
 ## Development
 
+- For operator-run v2 predictions and blind reasoning reviews, prefer the
+  OpenAI Responses API with `gpt-6.1-sol / high`. Select that provider explicitly
+  for new handoffs. Use the existing Codex path only when API credits are
+  exhausted or API connectivity, timeouts, or service availability fail.
+- Record the failure category and actual provider when falling back. Schema,
+  citation, cutoff, refusal, persistence, missing-credential, authentication,
+  unsupported-model, and ordinary rate-limit failures are not fallback triggers.
+  Never relabel or edit an already sealed API handoff to make it look
+  like a Codex run; preserve the versioned prepare/draft/finalize boundary.
+
 - Keep changes scoped and preserve compatibility unless the change explicitly
   updates the public contract and migration path.
 - Use Pydantic models for untrusted API and file input. Reject unexpected fields

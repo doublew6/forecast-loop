@@ -167,6 +167,12 @@ Risk Critic 是角色特例：成绩单显示反证覆盖率、失效条件覆�
 
 ## 6. 预测 file handoff
 
+v2 操作流程优先使用 OpenAI Responses API，使用 `gpt-6.1-sol / high`，预测和盲审
+仅在确认额度耗尽或连接、超时、服务故障时回退已安装的 Codex。回退策略在 prepare
+时封存，不因认证失败、普通限流或草稿校验失败而触发。CLI 保留既有 Codex 默认值以兼容
+旧调用；两条路径共享冻结输入、确定性 CIO、引用校验与 finalize。
+API 配置、操作步骤和契约兼容说明见 [Responses API 接入](openai-responses-v2.md)。
+
 首次运行先升级数据库：
 
 ```bash

@@ -123,6 +123,11 @@ five-index history, without backfilling old records or turning every data
 instrument into a forecast target. See the
 [focused multi-horizon research protocol v2](docs/research-program-v2.md).
 
+Operator-run focused v2 predictions and blind reviews prefer the OpenAI Responses
+API (`gpt-6.1-sol / high`), with a sealed Codex fallback limited to confirmed
+quota or availability failures. Deterministic validation and finalization remain
+in place. See [Responses API setup](docs/openai-responses-v2.md).
+
 ## Architecture
 
 ```text
