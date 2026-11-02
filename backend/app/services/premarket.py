@@ -22,7 +22,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ..config import REPOSITORY_ROOT, Settings
 from ..premarket import (
-    PREMARKET_HANDOFF_SCHEMA_V1,
     PREMARKET_TIMEZONE,
     PremarketDraftBundleV1,
     PremarketEvaluationV1,
@@ -34,6 +33,8 @@ from ..premarket import (
     canonical_json,
     evaluate_premarket_forecast,
     finalize_premarket_forecast,
+    parse_premarket_drafts,
+    parse_premarket_handoff,
 )
 from .daily_brief_v2 import FeishuOwnerConfig, FeishuOwnerSender
 
@@ -50,9 +51,7 @@ class PremarketServiceError(RuntimeError):
 class _PremarketReceiptBodyV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["forecast-loop.premarket-receipt/v1"] = (
-        PREMARKET_RECEIPT_SCHEMA_V1
-    )
+    schema_version: Literal["forecast-loop.premarket-receipt/v1"] = PREMARKET_RECEIPT_SCHEMA_V1
     run_id: str
     request_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -99,6 +98,7 @@ def prepare_premarket_run(
     settings: Settings,
     *,
     snapshot_path: Path,
+    api_first: bool = False,
     now: datetime | None = None,
 ) -> Path:
     snapshot = _read_model(snapshot_path, PremarketEvidenceSnapshotV1)
@@ -126,13 +126,12 @@ def prepare_premarket_run(
             existing.prepared_at > prepared_at
             or existing.prepared_at >= snapshot.finalization_deadline
         ):
-            raise PremarketServiceError(
-                "existing premarket handoff has invalid preparation time"
-            )
+            raise PremarketServiceError("existing premarket handoff has invalid preparation time")
         expected = build_premarket_handoff(
             run_id=run_id,
             snapshot=snapshot,
             prepared_at=existing.prepared_at,
+            api_first=api_first,
         )
         if existing.request_hash != expected.request_hash:
             raise PremarketServiceError("existing premarket handoff has different content")
@@ -141,17 +140,18 @@ def prepare_premarket_run(
         run_id=run_id,
         snapshot=snapshot,
         prepared_at=prepared_at,
+        api_first=api_first,
     )
     job_dir.mkdir(mode=0o700)
     _atomic_write(job_dir / "input.json", canonical_json(handoff), mode=0o400)
     template = {
-        "schema_version": PREMARKET_HANDOFF_SCHEMA_V1,
+        "schema_version": handoff.schema_version,
         "run_id": handoff.run_id,
         "request_hash": handoff.request_hash,
         "generated_at": None,
         "generated_by": {
-            "surface": "codex",
-            "model": "gpt-5.6-sol",
+            "surface": "openai_responses" if api_first else "codex",
+            "model": "gpt-6.1-sol" if api_first else "gpt-5.6-sol",
             "reasoning_effort": "high",
         },
         "drafts": [
@@ -203,9 +203,7 @@ def finalize_premarket_run(
         if receipt_exists and not forecast_exists:
             raise PremarketServiceError("premarket receipt exists without forecast")
         if handoff.run_id != resolved.name:
-            raise PremarketServiceError(
-                "premarket job directory does not match run_id"
-            )
+            raise PremarketServiceError("premarket job directory does not match run_id")
         accepted_at = _sample_finalization_time(
             zone,
             now=now,
@@ -233,9 +231,7 @@ def finalize_premarket_run(
                 accepted_at=existing.created_at,
             )
             if existing.content_hash != reproduced.content_hash:
-                raise PremarketServiceError(
-                    "existing premarket forecast has different content"
-                )
+                raise PremarketServiceError("existing premarket forecast has different content")
             if receipt_exists:
                 _validate_premarket_receipt_at(
                     directory_fd,
@@ -296,9 +292,7 @@ def finalize_premarket_run(
             PremarketForecastV1,
         )
         if sealed.content_hash != candidate.content_hash:
-            raise PremarketServiceError(
-                "written premarket forecast has different content"
-            )
+            raise PremarketServiceError("written premarket forecast has different content")
         _validate_premarket_receipt_at(
             directory_fd,
             "receipt.json",
@@ -504,6 +498,7 @@ def _build_premarket_receipt(forecast: PremarketForecastV1) -> _PremarketReceipt
     receipt_hash = hashlib.sha256(canonical_json(payload)).hexdigest()
     return _PremarketReceiptV1(**payload, receipt_hash=receipt_hash)
 
+
 def build_premarket_brief(
     settings: Settings,
     *,
@@ -683,9 +678,7 @@ def _sample_finalization_time(
 ) -> datetime:
     sampled = clock() if clock is not None else now or datetime.now(zone)
     if sampled.tzinfo is None or sampled.utcoffset() is None:
-        raise PremarketServiceError(
-            "premarket finalization time must be timezone-aware"
-        )
+        raise PremarketServiceError("premarket finalization time must be timezone-aware")
     return sampled.astimezone(zone)
 
 
@@ -796,9 +789,7 @@ def _validate_completed_premarket_forecast(
         accepted_at=forecast.created_at,
     )
     if reproduced.content_hash != forecast.content_hash:
-        raise PremarketServiceError(
-            "completed premarket forecast has different content"
-        )
+        raise PremarketServiceError("completed premarket forecast has different content")
 
 
 @contextmanager
@@ -815,10 +806,7 @@ def _locked_premarket_job(
         requested_before = os.stat(requested_input, follow_symlinks=False)
     except OSError as exc:
         raise PremarketServiceError("premarket job directory is unavailable") from exc
-    if (
-        not stat.S_ISDIR(configured_before.st_mode)
-        or not stat.S_ISDIR(requested_before.st_mode)
-    ):
+    if not stat.S_ISDIR(configured_before.st_mode) or not stat.S_ISDIR(requested_before.st_mode):
         raise PremarketServiceError("premarket job directory is unavailable")
     try:
         configured_root = configured_input.resolve(strict=True)
@@ -875,9 +863,7 @@ def _locked_premarket_job(
             or _file_identity(premarket_status) != _file_identity(premarket_before)
             or _file_identity(premarket_after) != _file_identity(premarket_before)
         ):
-            raise PremarketServiceError(
-                "premarket handoff root is not a directory"
-            )
+            raise PremarketServiceError("premarket handoff root is not a directory")
         job_descriptor = os.open(
             requested_job.name,
             directory_flags,
@@ -893,10 +879,7 @@ def _locked_premarket_job(
             raise PremarketServiceError("premarket job is not a directory")
         lock_descriptor = os.open(
             ".finalize.lock",
-            os.O_RDWR
-            | os.O_CREAT
-            | getattr(os, "O_NOFOLLOW", 0)
-            | getattr(os, "O_CLOEXEC", 0),
+            os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
             0o600,
             dir_fd=job_descriptor,
         )
@@ -985,9 +968,7 @@ def _safe_read_at(directory_fd: int, name: str) -> bytes:
             dir_fd=directory_fd,
         )
     except OSError as exc:
-        raise PremarketServiceError(
-            f"required regular file is missing: {name}"
-        ) from exc
+        raise PremarketServiceError(f"required regular file is missing: {name}") from exc
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_JSON_BYTES:
@@ -1020,7 +1001,7 @@ def _safe_read_at(directory_fd: int, name: str) -> bytes:
 def _read_model_at(directory_fd: int, name: str, model_type):
     raw = _safe_read_at(directory_fd, name)
     try:
-        return model_type.model_validate_json(raw)
+        return _parse_model(raw, model_type)
     except ValueError as exc:
         raise PremarketServiceError(f"invalid {name}") from exc
 
@@ -1062,9 +1043,7 @@ def _atomic_write_at(
             directory_changed = True
             break
         if descriptor is None or temporary_name is None:
-            raise PremarketServiceError(
-                f"unable to allocate temporary file for {name}"
-            )
+            raise PremarketServiceError(f"unable to allocate temporary file for {name}")
 
         phase = "write"
         view = memoryview(payload)
@@ -1154,10 +1133,18 @@ def _validate_premarket_receipt(
         raise PremarketServiceError("existing premarket receipt does not match forecast")
 
 
+def _parse_model(raw: bytes, model_type):
+    if model_type is PremarketHandoffV1:
+        return parse_premarket_handoff(raw)
+    if model_type is PremarketDraftBundleV1:
+        return parse_premarket_drafts(raw)
+    return model_type.model_validate_json(raw)
+
+
 def _read_model(path: Path, model_type):
     raw = _safe_read(path)
     try:
-        return model_type.model_validate_json(raw)
+        return _parse_model(raw, model_type)
     except ValueError as exc:
         raise PremarketServiceError(f"invalid {path.name}") from exc
 
