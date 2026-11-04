@@ -41,6 +41,14 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Make market-universe execution and judgment timestamp tests independent of the
+  current season, covering New York winter, summer and DST transitions while
+  preserving historical forecast cutoff checks.
+- Update the frozen LangGraph and SDK dependencies to 1.2.14 and 0.4.6 to address
+  GHSA-3fx2-cqw9-xr3c without suppressing security audit findings.
+- Refresh the frontend dependency group, review React Router 8.5.1 with matching
+  exact-version audit checks, and update Zod and scoped development-tool minimatch
+  dependencies while retaining the all-severity zero-vulnerability gate.
 - Accept the reviewed Tushare provider domain for Live evidence provenance,
   preserving HTTPS, hostname-boundary, source-time and content-hash validation.
 - Recognize explicit quota and service failure codes inside nested SSE error

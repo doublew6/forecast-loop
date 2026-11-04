@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app import api as api_module
+from app import workflow as workflow_module
 from app.config import Settings
 from app.main import create_app
 from app.market_universe import (
@@ -21,6 +22,7 @@ from app.market_universe import (
 )
 from app.models import Forecast, WorkflowRun
 from app.serializers import run_read
+from app.services import user_judgment as user_judgment_module
 from app.services.evaluation import ForecastNotMatureError, evaluate_forecast
 from app.services.judgment_bundle import (
     FORECAST_NAME,
@@ -143,7 +145,36 @@ def test_market_universe_loader_seals_body_and_rejects_duplicate_json_keys(
         load_market_universe(duplicate)
 
 
-def test_custom_us_index_and_equity_run_end_to_end(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("execution_instant", "expected_offset"),
+    [
+        ("2026-07-14T16:00:00+00:00", "-04:00"),
+        ("2026-11-04T16:00:00+00:00", "-05:00"),
+        ("2026-03-08T06:59:00+00:00", "-05:00"),
+        ("2026-03-08T07:01:00+00:00", "-04:00"),
+        ("2026-11-01T05:59:00+00:00", "-04:00"),
+        # Use the first unambiguous standard-time hour: SQLite's existing
+        # naive local timestamp storage does not retain the repeated-hour fold.
+        ("2026-11-01T07:00:00+00:00", "-05:00"),
+    ],
+)
+def test_custom_us_index_and_equity_run_end_to_end(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    execution_instant: str,
+    expected_offset: str,
+) -> None:
+    frozen_instant = datetime.fromisoformat(execution_instant)
+
+    class ExecutionClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return frozen_instant.astimezone().replace(tzinfo=None)
+            return frozen_instant.astimezone(tz)
+
+    monkeypatch.setattr(workflow_module, "datetime", ExecutionClock)
+    monkeypatch.setattr(user_judgment_module, "datetime", ExecutionClock)
     universe_path = _write_universe(
         tmp_path / "us-universe.json",
         _universe_payload(),
@@ -180,8 +211,16 @@ def test_custom_us_index_and_equity_run_end_to_end(tmp_path: Path) -> None:
         assert created.json()["status"] == "completed"
         assert created.json()["as_of"].endswith("-04:00")
         assert created.json()["data_cutoff"].endswith("-04:00")
-        assert created.json()["started_at"].endswith("-04:00")
-        assert created.json()["completed_at"].endswith("-04:00")
+        started_at = datetime.fromisoformat(created.json()["started_at"])
+        completed_at = datetime.fromisoformat(created.json()["completed_at"])
+        for timestamp in (started_at, completed_at):
+            assert timestamp.tzinfo is not None
+            assert timestamp == frozen_instant
+            assert timestamp.isoformat().endswith(expected_offset)
+            assert timestamp.utcoffset() == timestamp.astimezone(
+                ZoneInfo("America/New_York")
+            ).utcoffset()
+        assert started_at <= completed_at
 
         latest = client.get("/api/forecasts/latest")
         assert latest.status_code == 200
@@ -212,7 +251,7 @@ def test_custom_us_index_and_equity_run_end_to_end(tmp_path: Path) -> None:
         )
         assert judgment.status_code == 201, judgment.text
         judgment_id = judgment.json()["id"]
-        assert judgment.json()["submitted_at"].endswith("-04:00")
+        assert judgment.json()["submitted_at"].endswith(expected_offset)
 
         # Historical reads must use the run seal, not the currently configured
         # process timezone. This also protects canonical judgment verification
@@ -231,9 +270,9 @@ def test_custom_us_index_and_equity_run_end_to_end(tmp_path: Path) -> None:
         detail = client.get(f"/api/user-judgments/{judgment_id}")
         wiki = client.get(f"/api/user-judgments/{judgment_id}/wiki")
         assert history.status_code == 200
-        assert history.json()["items"][0]["submitted_at"].endswith("-04:00")
+        assert history.json()["items"][0]["submitted_at"].endswith(expected_offset)
         assert detail.status_code == 200
-        assert detail.json()["submitted_at"].endswith("-04:00")
+        assert detail.json()["submitted_at"].endswith(expected_offset)
         assert wiki.status_code == 200
         bundle = export_judgment_bundle(
             client.app.state.database,
@@ -247,7 +286,7 @@ def test_custom_us_index_and_equity_run_end_to_end(tmp_path: Path) -> None:
         bundled_judgment = json.loads((bundle / JUDGMENT_NAME).read_bytes())
         assert bundled_forecast["as_of"].endswith("-04:00")
         assert bundled_forecast["data_cutoff"].endswith("-04:00")
-        assert bundled_judgment["submitted_at"].endswith("-04:00")
+        assert bundled_judgment["submitted_at"].endswith(expected_offset)
 
         meeting = client.get(f"/api/meetings/{created.json()['id']}")
         assert meeting.status_code == 200
@@ -454,7 +493,7 @@ def test_restarted_custom_app_does_not_display_newer_default_run(
         market_universe_path=universe_path,
         timezone="America/New_York",
         demo_mode=True,
-        operator_token="custom-universe-operator-token-0123456789",
+        operator_token="example-custom-universe-operator-token-0123456789",
         auto_seed=False,
     )
     custom_as_of = datetime.fromisoformat("2026-07-10T16:00:00-04:00")
@@ -498,7 +537,7 @@ def test_restarted_custom_app_does_not_display_newer_default_run(
             "/api/user-judgments/targets",
             headers={
                 "Authorization": (
-                    "Bearer custom-universe-operator-token-0123456789"
+                    "Bearer example-custom-universe-operator-token-0123456789"
                 )
             },
         )
@@ -534,7 +573,7 @@ def test_live_post_default_idempotency_and_active_lookup_are_universe_scoped(
         demo_mode=False,
         llm_api_key="test-key",
         evidence_snapshot_path=tmp_path / "unused-snapshot.json",
-        operator_token="custom-universe-operator-token-0123456789",
+        operator_token="example-custom-universe-operator-token-0123456789",
         auto_seed=False,
     )
     as_of = datetime.fromisoformat("2026-07-27T16:00:00-04:00")
@@ -634,7 +673,7 @@ def test_live_post_default_idempotency_and_active_lookup_are_universe_scoped(
         client.app.state.workflow = StubWorkflow()
         headers = {
             "Authorization": (
-                "Bearer custom-universe-operator-token-0123456789"
+                "Bearer example-custom-universe-operator-token-0123456789"
             )
         }
         created = client.post("/api/runs", json={}, headers=headers)
