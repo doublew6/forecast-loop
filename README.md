@@ -30,6 +30,9 @@ uv run python examples/first_forecast.py
 全部数据与生成的预测仅供演示，退出后清理临时目录；不读取仓库 `.env`，不调用模型或行情服务。
 Demo 不参与正式成绩，哈希校验也不证明预测准确。真实结果评价、数据许可和部署前提见
 [使用指南](docs/usage/quickstart.md)。
+只读公网展示：运行 `make showcase ARGS="--database ./data/forecast.sqlite3"`
+导出已封签结果并构建静态站；访问不会触发模型。部署与每日更新见
+[公开展示指南](docs/public-showcase.md)。
 
 forecast-loop 是一个**可验证的预测 Agent 框架**。预测信号可以由人直接输入，也可以由
 确定性量化程序或 AI 模型生成；无论来源如何，都要遵守同一套事前封签、证据冻结、
@@ -97,6 +100,11 @@ Agent 数量、表达气势或单次盈亏。
 信号保存。它与既有五指数历史追加式并行，既不回填旧记录，也不把数据工具自动变成预测
 目标。完整契约、运行步骤与激活门禁见
 [单主标的、多周期研究协议 v2](docs/research-program-v2.md)。
+
+v2 操作流程优先使用 OpenAI Responses API（`gpt-6.1-sol / high`），仅在确认额度耗尽
+或连接、超时、服务故障时按预先封存的策略回退 Codex；预测和盲审保留确定性校验与入库
+流程。新 API 任务会先检查证据就绪情况，并以结构化 `not_ready` 区分缺证与格式错误。
+配置和命令见 [Responses API 接入](docs/openai-responses-v2.md)。
 
 盘前研究使用独立的 `csi1000-open-to-open-d1` 目标：上一交易日收盘后开始收集
 动态资讯与外盘证据，09:10 冻结，09:15 形成判断，评价窗口为当天官方开盘到下一

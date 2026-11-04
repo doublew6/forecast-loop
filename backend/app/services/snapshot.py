@@ -38,6 +38,7 @@ DEMO_VOLATILITY = {
 TRUSTED_SOURCE_DOMAINS = frozenset(
     {
         "alphavantage.co",
+        "cls.cn",
         "cnindex.com.cn",
         "cninfo.com.cn",
         "computeexpresslink.org",
@@ -65,6 +66,7 @@ TRUSTED_SOURCE_DOMAINS = frozenset(
         "stooq.com",
         "szse.cn",
         "tsmc.com",
+        "tushare.pro",
         "yahoo.com",
     }
 )

@@ -13,6 +13,7 @@ from app.services.snapshot import (
     canonical_hash,
     evidence_item_hash,
     load_evidence_snapshot,
+    validate_trusted_source_url,
 )
 
 from scripts.build_snapshot import build_snapshot
@@ -185,6 +186,28 @@ def test_live_snapshot_rejects_allowlist_lookalike_domain(tmp_path) -> None:
 
     with pytest.raises(LiveEvidenceRequiredError, match="trusted allowlist"):
         load_evidence_snapshot(_live_settings(tmp_path, path), as_of=as_of)
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://api.tushare.pro", "https://tushare.pro/document/2?doc_id=112"],
+)
+def test_live_evidence_accepts_tushare_provider_provenance(url: str) -> None:
+    validate_trusted_source_url(url, label="provider evidence")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://api.tushare.pro",
+        "https://tushare.pro.evil.example/fake",
+        "https://fake-tushare.pro/fake",
+        "https://@api.tushare.pro/fake",
+    ],
+)
+def test_tushare_provider_still_requires_https_and_exact_domain_boundary(url: str) -> None:
+    with pytest.raises(LiveEvidenceRequiredError):
+        validate_trusted_source_url(url, label="provider evidence")
 
 
 def test_live_snapshot_binds_market_and_calendar_sessions_to_forecast_dates(tmp_path) -> None:

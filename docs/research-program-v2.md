@@ -1,5 +1,11 @@
 # 单主标的、多周期研究协议 v2
 
+新建 API 任务默认使用 Responses v4：Live 在 prepare 前检查绑定快照的证据清单，缺证返回
+结构化 `not_ready`，不消耗该预测日期、不调用模型。模型仍可在语义检查后返回 `not_ready`；
+finalize 只记录带原因的失败回执，不生成预测或结果评分，也不触发 Codex 回退。
+目标、周期和三分类方向由封存 program/assignment 定义，Wiki 的证据要求继续保留。
+协议、证据分类与旧版兼容方式见 [API 接入](openai-responses-v2.md)。
+
 本文是 focused research v2 的运行、研究和审计协议。v2 是追加式系统：它使用独立的
 契约、表、文件交接和评价记录，不重新解释或回填五指数 v1 历史。
 
@@ -166,6 +172,12 @@ Risk Critic 是角色特例：成绩单显示反证覆盖率、失效条件覆�
 方向准确率始终为空，漏报指标也不会自动改变权重。
 
 ## 6. 预测 file handoff
+
+v2 操作流程优先使用 OpenAI Responses API，使用 `gpt-6.1-sol / high`，预测和盲审
+仅在确认额度耗尽或连接、超时、服务故障时回退已安装的 Codex。回退策略在 prepare
+时封存，不因认证失败、普通限流或草稿校验失败而触发。CLI 保留既有 Codex 默认值以兼容
+旧调用；两条路径共享冻结输入、确定性 CIO、引用校验与 finalize。
+API 配置、操作步骤和契约兼容说明见 [Responses API 接入](openai-responses-v2.md)。
 
 首次运行先升级数据库：
 
@@ -517,3 +529,5 @@ focused v2 提供以下只读接口：
 8. 检查 Trace 的 `telemetry_complete`、失败/degraded attempt 和容量告警；
 9. Agent Eval 未 `pass` 或激活样本不足时，D1 必须继续显示 Shadow；
 10. 任何异常只追加新事件、attempt 或 bad case，不修改已封签历史。
+
+See [evidence coverage](evidence-coverage.md) for opt-in coverage-aware handoff versions.

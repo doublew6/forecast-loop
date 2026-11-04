@@ -13,9 +13,19 @@ patch 与 digest 更新。镜像更新后必须重新构建，并通过 Docker s
 容器扫描；已有部署需要重建并重新部署才能应用这些修复。
 
 前端保留全严重级别零漏洞的 npm audit 门槛。React Router 当前审查版本为
-`8.3.1`，升级时应同步修改 `package.json`、锁文件、
+`8.5.1`，升级时应同步修改 `package.json`、锁文件、
 `scripts/check_npm_audit.py` 和对应策略测试，再运行前端测试、构建与安全扫描。
 不要通过忽略漏洞或放宽版本检查来合并依赖更新。
+
+当前冻结的 LangGraph 最低版本为 `1.2.14`，其 SDK 为 `0.4.6`，修复
+[GHSA-3fx2-cqw9-xr3c](https://github.com/advisories/GHSA-3fx2-cqw9-xr3c)。
+前端锁定 Zod `4.6.7`，并对 ESLint、`@eslint/config-array` 与
+`@typescript-eslint/typescript-estree` 的 minimatch 依赖分别覆盖为 `11.0.1`，
+修复 [Zod 公告](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) 与
+[minimatch 公告](https://github.com/advisories/GHSA-g3hv-75wg-m249)。
+minimatch 11 移除了 `makeRe` 等接口；上述工具当前使用的是保留的匹配接口，
+仍需通过完整文件发现、lint、测试和构建检查。覆盖只影响这些开发工具依赖，
+不是漏洞忽略配置。待上游声明兼容修复版本后，应移除覆盖并重新验收。
 
 ## 应用层访问规则
 
