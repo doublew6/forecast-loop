@@ -112,3 +112,26 @@ outcome 观察时间不晚于宿主接受评价的时间。相同 forecast/outco
 
 收益曲线不包含手续费、滑点、融券和做空成本，只是对预测信号的历史诊断，不代表
 可交易净收益。实际结果落在噪声带内时保留记录，但不进入方向胜率分母。
+
+## API-first drafting (handoff v2)
+
+New tasks may opt in with `premarket prepare --api-first`. Preparation seals
+`gpt-6.1-sol / high` and the quota-or-availability-only Codex policy in a v2
+handoff. The default remains v1 for compatibility. An existing task cannot gain
+or change this policy, and historical inputs, drafts and receipts remain sealed.
+The draft-only `generate_premarket_drafts` interface uses the existing Responses
+transport and returns a validated candidate without persisting or publishing it.
+
+Only confirmed credit exhaustion, connection errors, timeouts or service
+unavailability permit one fallback to the installed official Codex client with
+its current login and `gpt-5.6-sol / high`. Authentication, missing credentials,
+unsupported models, ordinary rate limits, refusals, schema and evidence failures
+stop the run. The host records the actual provider, primary failure category and
+time. Both attempts share the generation budget and finalization deadline.
+
+Adapters must explicitly supply private API configuration and preserve existing
+proxy routing. Frozen evidence and Wiki content are sent to OpenAI for cloud
+inference at draft execution; `store=false` does not mean offline processing.
+Do not copy private configuration, runtime paths or credentials into this tree.
+
+See [evidence coverage](evidence-coverage.md) for opt-in coverage-aware handoff versions.

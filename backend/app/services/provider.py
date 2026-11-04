@@ -7,13 +7,13 @@ import json
 import random
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from langchain_openai import ChatOpenAI
 
 from ..config import Settings
 from ..domain import AGENT_BY_ID, Direction, Horizon, IndexDefinition, predicted_direction
-from ..schemas import AgentDraft, FrozenEvidenceSnapshot, Probabilities
+from ..schemas import AgentDraft, FrozenEvidenceSnapshot, Probabilities, WikiEntryRead
 from .wiki import WikiCatalog
 
 LEGACY_CODEX_FILE_PROVIDER_NAME = "codex-file-handoff-v1"
@@ -168,8 +168,7 @@ class DeterministicDemoProvider:
         if not research_opinions:
             raise ValueError("strategy agent requires research opinions")
         probability_rows = [
-            Probabilities.model_validate(opinion["probabilities"])
-            for opinion in research_opinions
+            Probabilities.model_validate(opinion["probabilities"]) for opinion in research_opinions
         ]
         probabilities = Probabilities(
             up=sum(row.up for row in probability_rows) / len(probability_rows),
@@ -221,8 +220,7 @@ class DeterministicDemoProvider:
         disagreement = len(set(directional)) > 1
         summaries = [str(opinion["summary"]) for opinion in research_opinions]
         directional_score = sum(
-            float(opinion["probabilities"]["up"])
-            - float(opinion["probabilities"]["down"])
+            float(opinion["probabilities"]["up"]) - float(opinion["probabilities"]["down"])
             for opinion in research_opinions
             if isinstance(opinion.get("probabilities"), dict)
         )
@@ -261,21 +259,63 @@ class DeterministicDemoProvider:
         )
 
 
+def _wiki_bound_draft_schema(entry: WikiEntryRead) -> dict[str, Any]:
+    """Bind references to this frozen entry without weakening post-validation."""
+    sections = [section.slug for section in entry.sections]
+    if not sections:
+        raise ValueError("selected Wiki entry has no available sections")
+    schema = AgentDraft.model_json_schema()
+    schema["properties"]["wiki_entry_id"]["enum"] = [entry.id]
+    schema["properties"]["wiki_section"]["enum"] = sections
+
+    def strict_objects(value: Any) -> None:
+        if isinstance(value, dict):
+            value.pop("default", None)
+            if value.get("type") == "object":
+                value["additionalProperties"] = False
+                value["required"] = list(value.get("properties", {}))
+            for child in value.values():
+                strict_objects(child)
+        elif isinstance(value, list):
+            for child in value:
+                strict_objects(child)
+
+    strict_objects(schema)
+    return schema
+
+
 class LangChainResearchProvider:
     """OpenAI-compatible LangChain provider with Pydantic structured output."""
 
     name = "langchain-openai-compatible"
-    prompt_version = "research-agent-v5"
+    prompt_version = "research-agent-v6"
 
     def __init__(self, settings: Settings) -> None:
-        self.model = ChatOpenAI(
+        self._chat_model = ChatOpenAI(
             model=settings.llm_model,
             api_key=settings.llm_api_key,
             base_url=settings.llm_base_url,
             temperature=0,
             timeout=settings.llm_timeout_seconds,
             max_retries=settings.llm_max_retries,
-        ).with_structured_output(AgentDraft)
+        )
+        self.model = self._chat_model.with_structured_output(AgentDraft)
+
+    def _invoke_draft(
+        self, prompt: str, entry: WikiEntryRead, *, allow_evidence_ids: bool = True
+    ) -> AgentDraft | dict[str, Any]:
+        schema = _wiki_bound_draft_schema(entry)
+        if not allow_evidence_ids:
+            schema["properties"]["evidence_item_ids"]["maxItems"] = 0
+        chat = getattr(self, "_chat_model", None)
+        model = chat.with_structured_output(schema, strict=True) if chat is not None else self.model
+        instructions, context = prompt.rsplit("\n", 1)
+        prompt = (
+            instructions + "\nwiki_entry_id 必须逐字使用当前 wiki.id；"
+            "wiki_section 必须逐字选用当前 wiki.sections 中的 slug，不能使用标题或添加前缀。\n"
+            + context
+        )
+        return model.invoke(prompt)
 
     def research(
         self,
@@ -324,10 +364,9 @@ class LangChainResearchProvider:
             "down 三个结果概率以及证据、反证与失效条件。direction 不允许 neutral，必须比较"
             " up 与 down 后明确选择较大的一侧；up 与 down 不得相等。neutral 只表示实际收益"
             "可能落入评价噪声带，不是可选立场。每条事实证据必须写出 frozen_evidence 的 id；"
-            "概率之和必须为1，禁止编造引用。\n"
-            + json.dumps(context, ensure_ascii=False)
+            "概率之和必须为1，禁止编造引用。\n" + json.dumps(context, ensure_ascii=False)
         )
-        result = self.model.invoke(prompt)
+        result = self._invoke_draft(prompt, entry)
         if not isinstance(result, AgentDraft):
             result = AgentDraft.model_validate(result)
         if result.wiki_entry_id != entry.id:
@@ -364,8 +403,7 @@ class LangChainResearchProvider:
             },
             "horizon": horizon.value,
             "role": (
-                index.agent_brief_for("risk_critic_agent")
-                or AGENT_BY_ID["risk_critic_agent"].role
+                index.agent_brief_for("risk_critic_agent") or AGENT_BY_ID["risk_critic_agent"].role
             ),
             "research_opinions": research_opinions,
             "wiki": entry.model_dump(mode="json", exclude={"body"}),
@@ -375,10 +413,10 @@ class LangChainResearchProvider:
             "阅读其他研究员的全部观点，查找反证、共同来源导致的伪共识、数据污染和失效条件。"
             "你不参与 CIO 方向投票，但仍需给出反证后的风险倾向："
             "direction 必须为 up 或 down，并与 up/down 中较大一侧一致，两者不得相等。neutral"
-            " 只表示小波动/不确定性概率，可以是最高项。禁止编造引用。\n"
-            + json.dumps(context, ensure_ascii=False)
+            " 只表示小波动/不确定性概率，可以是最高项。evidence_item_ids 必须为空数组，"
+            "不得引入新证据 ID。禁止编造引用。\n" + json.dumps(context, ensure_ascii=False)
         )
-        result = self.model.invoke(prompt)
+        result = self._invoke_draft(prompt, entry, allow_evidence_ids=False)
         if not isinstance(result, AgentDraft):
             result = AgentDraft.model_validate(result)
         if result.wiki_entry_id != entry.id:
@@ -430,10 +468,7 @@ class LangChainResearchProvider:
             },
             "horizon": horizon.value,
             "volatility_20d": volatility_20d,
-            "role": (
-                index.agent_brief_for("strategy_agent")
-                or AGENT_BY_ID["strategy_agent"].role
-            ),
+            "role": (index.agent_brief_for("strategy_agent") or AGENT_BY_ID["strategy_agent"].role),
             "research_opinions": research_opinions,
             "peer_opinions": peer_opinions,
             "available_evidence_item_ids": available_evidence_ids,
@@ -449,7 +484,7 @@ class LangChainResearchProvider:
             "available_evidence_item_ids 的非空子集，禁止编造引用。\n"
             + json.dumps(context, ensure_ascii=False)
         )
-        result = self.model.invoke(prompt)
+        result = self._invoke_draft(prompt, entry)
         if not isinstance(result, AgentDraft):
             result = AgentDraft.model_validate(result)
         if result.wiki_entry_id != entry.id:

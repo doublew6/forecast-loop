@@ -34,12 +34,20 @@ from .jobs import (
 from .market_universe import MarketUniverseSpec, load_market_universe
 from .models import UserJudgment
 from .quant_contracts import QuantInputSnapshot, QuantSignalBundle
+from .research_readiness import EvidenceAdmissionV1, EvidenceReadinessV1
 from .research_v2 import (
     AgentSignalEnvelopeV2,
     CodexHandoffRequestV3,
     EvidenceSnapshotV2,
     ReflectionDraftV2,
     ResearchProgramV2,
+)
+from .responses_v2 import (
+    ResponsesHandoffRequestV1,
+    ResponsesHandoffRequestV2,
+    ResponsesHandoffRequestV3,
+    ResponsesHandoffRequestV4,
+    ResponsesPredictionContentV4,
 )
 from .schemas import UserJudgmentCreate
 from .services.agent_evaluation import (
@@ -71,6 +79,7 @@ from .services.benchmark import (
     build_benchmark_report,
     verify_benchmark_golden,
 )
+from .services.codex_responses_v2 import CodexResponsesFallback
 from .services.daily_brief_v2 import (
     DEFAULT_BRIEF_TITLE,
     DEFAULT_DELIVERY_ROOT,
@@ -87,6 +96,12 @@ from .services.handoff import (
 from .services.judgment_bundle import (
     export_judgment_bundle,
     verify_judgment_bundle,
+)
+from .services.openai_responses_v2 import (
+    DEFAULT_OPENAI_ENV,
+    OpenAIResponsesSettings,
+    draft_reasoning_review,
+    draft_research_run,
 )
 from .services.premarket import (
     DEFAULT_PREMARKET_DELIVERY_ROOT,
@@ -105,6 +120,7 @@ from .services.recovery import (
     verify_backup,
 )
 from .services.research_v2 import (
+    ResearchInputsNotReady,
     ResearchV2Error,
     activate_d1_v2,
     create_reflection_v2,
@@ -461,6 +477,13 @@ def _parser() -> argparse.ArgumentParser:
             "evidence-snapshot-v2",
             "agent-signal-v2",
             "codex-handoff-v3",
+            "responses-handoff-v1",
+            "responses-handoff-v2",
+            "responses-handoff-v3",
+            "responses-handoff-v4",
+            "evidence-admission-v1",
+            "evidence-readiness-v1",
+            "responses-prediction-result-v4",
             "reflection-v2",
         ),
     )
@@ -594,11 +617,40 @@ def _parser() -> argparse.ArgumentParser:
     )
     research_prepare = research_v2_commands.add_parser(
         "prepare",
-        help="Freeze a v2 snapshot and create an outcome-blind Codex task.",
+        help="Freeze a v2 snapshot and create an outcome-blind model draft task.",
     )
     research_prepare.add_argument("--snapshot", type=Path, required=True)
     research_prepare.add_argument("--mode", choices=("demo", "live"), required=True)
     research_prepare.add_argument("--database-url", default=None)
+    research_prepare.add_argument(
+        "--evidence-admission", type=Path, default=None,
+        help="Versioned read-only evidence admission bound to the frozen snapshot (API v4 Live).",
+    )
+    research_prepare.add_argument(
+        "--responses-protocol", choices=("v4", "legacy"), default="v4",
+        help="New API tasks use v4 readiness and result branches; legacy retains v2/v3.",
+    )
+    research_prepare.add_argument(
+        "--provider",
+        choices=("codex", "openai_responses"),
+        default="codex",
+        help="Freeze the draft provider; existing same-day packages cannot switch providers.",
+    )
+    research_prepare.add_argument(
+        "--codex-fallback",
+        action="store_true",
+        help="Seal quota/availability-only Codex fallback for an API-first task.",
+    )
+    for name, help_text in (
+        ("draft", "Send frozen prediction inputs to OpenAI and write only drafts.json."),
+        ("reasoning-draft", "Send frozen blind-review inputs to OpenAI and write review drafts."),
+    ):
+        draft_command = research_v2_commands.add_parser(name, help=help_text)
+        draft_command.add_argument("job_dir", type=Path)
+        draft_command.add_argument("--env-file", type=Path, default=DEFAULT_OPENAI_ENV)
+        draft_command.add_argument("--database-url", default=None)
+        draft_command.add_argument("--codex-binary", type=Path, default=None)
+        draft_command.add_argument("--codex-timeout-seconds", type=int, default=1800)
     research_finalize = research_v2_commands.add_parser(
         "finalize",
         help="Validate v2 drafts, derive CIO, and persist append-only records.",
@@ -701,6 +753,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Validate a premarket snapshot and create the Codex draft task.",
     )
     premarket_prepare.add_argument("--snapshot", type=Path, required=True)
+    premarket_prepare.add_argument(
+        "--api-first",
+        action="store_true",
+        help="Seal API-first drafting with quota/availability-only Codex fallback.",
+    )
     premarket_finalize = premarket_commands.add_parser(
         "finalize",
         help="Validate premarket drafts and seal the open-to-open forecast.",
@@ -1256,6 +1313,13 @@ def _contract_command(args: argparse.Namespace) -> int:
         "evidence-snapshot-v2": EvidenceSnapshotV2,
         "agent-signal-v2": AgentSignalEnvelopeV2,
         "codex-handoff-v3": CodexHandoffRequestV3,
+        "responses-handoff-v1": ResponsesHandoffRequestV1,
+        "responses-handoff-v2": ResponsesHandoffRequestV2,
+        "responses-handoff-v3": ResponsesHandoffRequestV3,
+        "responses-handoff-v4": ResponsesHandoffRequestV4,
+        "evidence-admission-v1": EvidenceAdmissionV1,
+        "evidence-readiness-v1": EvidenceReadinessV1,
+        "responses-prediction-result-v4": ResponsesPredictionContentV4,
         "reflection-v2": ReflectionDraftV2,
     }
     contract = contracts[args.contract_name]
@@ -1480,6 +1544,10 @@ def _research_v2_command(args: argparse.Namespace) -> int:
                 settings,
                 snapshot_path=args.snapshot,
                 mode=args.mode,
+                provider=args.provider,
+                codex_fallback=args.codex_fallback,
+                responses_protocol=args.responses_protocol,
+                evidence_admission_path=args.evidence_admission,
             )
             _print_json(
                 {
@@ -1488,6 +1556,21 @@ def _research_v2_command(args: argparse.Namespace) -> int:
                     "drafts_file": str((job_dir / "drafts.json").resolve()),
                 }
             )
+            return 0
+        if command in {"draft", "reasoning-draft"}:
+            config = OpenAIResponsesSettings(_env_file=args.env_file)
+            writer = draft_research_run if command == "draft" else draft_reasoning_review
+            kwargs = {}
+            if args.codex_binary is not None:
+                fallback = CodexResponsesFallback(
+                    args.codex_binary,
+                    timeout_seconds=args.codex_timeout_seconds,
+                )
+                kwargs["fallback_generator"] = (
+                    fallback.prediction if command == "draft" else fallback.review
+                )
+            output = writer(database, settings, config, job_dir=args.job_dir, **kwargs)
+            _print_json({"status": "draft_written", "drafts_file": str(output)})
             return 0
         if command == "finalize":
             row = finalize_research_run(database, settings, job_dir=args.job_dir)
@@ -1499,7 +1582,7 @@ def _research_v2_command(args: argparse.Namespace) -> int:
                     "reasoning_job_dir": str((args.job_dir / "reasoning").resolve()),
                 }
             )
-            return 0
+            return 2 if row.error == "not_ready" else 0
         if command == "notify":
             brief = build_latest_daily_brief(
                 database,
@@ -1690,6 +1773,9 @@ def _research_v2_command(args: argparse.Namespace) -> int:
             }
         )
         return 0
+    except ResearchInputsNotReady as exc:
+        _print_json(exc.report.model_dump(mode="json"))
+        return 2
     except (ResearchV2Error, DailyBriefV2Error, ValidationError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     finally:
@@ -1700,7 +1786,9 @@ def _premarket_command(args: argparse.Namespace) -> int:
     settings = Settings()
     try:
         if args.premarket_command == "prepare":
-            job_dir = prepare_premarket_run(settings, snapshot_path=args.snapshot)
+            job_dir = prepare_premarket_run(
+                settings, snapshot_path=args.snapshot, api_first=args.api_first
+            )
             _print_json(
                 {
                     "status": "awaiting_draft",

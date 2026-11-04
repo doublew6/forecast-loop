@@ -25,6 +25,7 @@ htmlcov/
 /node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/dist-showcase/
 frontend/coverage/
 *.log
 *.sarif

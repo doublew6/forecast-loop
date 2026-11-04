@@ -19,9 +19,19 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .evidence_coverage import (
+    DEGRADED_WARNING,
+    EvidenceCoverageV1,
+    EvidenceCoverageV3,
+    coverage_gaps,
+    validate_coverage,
+)
+
 PREMARKET_PROGRAM_SCHEMA_V1 = "forecast-loop.premarket-program/v1"
 PREMARKET_SNAPSHOT_SCHEMA_V1 = "forecast-loop.premarket-evidence-snapshot/v1"
 PREMARKET_HANDOFF_SCHEMA_V1 = "forecast-loop.premarket-handoff/v1"
+PREMARKET_HANDOFF_SCHEMA_V3 = "forecast-loop.premarket-handoff/v3"
+PREMARKET_HANDOFF_SCHEMA_V2 = "forecast-loop.premarket-handoff/v2"
 PREMARKET_FORECAST_SCHEMA_V1 = "forecast-loop.premarket-forecast/v1"
 PREMARKET_OUTCOME_SCHEMA_V1 = "forecast-loop.premarket-outcome/v1"
 PREMARKET_EVALUATION_SCHEMA_V1 = "forecast-loop.premarket-evaluation/v1"
@@ -482,6 +492,8 @@ def build_premarket_handoff(
     run_id: str,
     snapshot: PremarketEvidenceSnapshotV1,
     prepared_at: datetime,
+    api_first: bool = False,
+    evidence_coverage: EvidenceCoverageV1 | None = None,
 ) -> PremarketHandoffV1:
     assignments: list[PremarketAssignmentV1] = []
     analyst_assignment_ids: list[str] = []
@@ -529,6 +541,23 @@ def build_premarket_handoff(
         assignments=assignments,
     )
     payload = body.model_dump(mode="json")
+    if evidence_coverage is not None:
+        validate_coverage(evidence_coverage, snapshot, assignments)
+        payload.update(
+            schema_version=PREMARKET_HANDOFF_SCHEMA_V3,
+            generation_policy=PremarketGenerationPolicyV2().model_dump(mode="json"),
+            evidence_coverage=evidence_coverage.model_dump(mode="json"),
+        )
+        if isinstance(evidence_coverage, EvidenceCoverageV3):
+            payload["schema_version"] = "forecast-loop.premarket-handoff/v4"
+            return PremarketHandoffV4(**payload, request_hash=content_hash(payload))
+        return PremarketHandoffV3(**payload, request_hash=content_hash(payload))
+    if api_first:
+        payload.update(
+            schema_version=PREMARKET_HANDOFF_SCHEMA_V2,
+            generation_policy=PremarketGenerationPolicyV2().model_dump(mode="json"),
+        )
+        return PremarketHandoffV2(**payload, request_hash=content_hash(payload))
     return PremarketHandoffV1(**payload, request_hash=content_hash(payload))
 
 
@@ -617,6 +646,91 @@ class PremarketDraftBundleV1(ContractModel):
         return self
 
 
+class PremarketGenerationPolicyV2(ContractModel):
+    primary: Literal["openai_responses"] = "openai_responses"
+    model: Literal["gpt-6.1-sol"] = "gpt-6.1-sol"
+    reasoning_effort: Literal["high"] = "high"
+    fallback_policy: Literal["quota-or-availability/v1"] = "quota-or-availability/v1"
+    fallback_model: Literal["gpt-5.6-sol"] = "gpt-5.6-sol"
+
+
+class PremarketHandoffV2(PremarketHandoffV1):
+    schema_version: Literal["forecast-loop.premarket-handoff/v2"] = PREMARKET_HANDOFF_SCHEMA_V2
+    generation_policy: PremarketGenerationPolicyV2
+
+
+class PremarketHandoffV3(PremarketHandoffV2):
+    schema_version: Literal["forecast-loop.premarket-handoff/v3"] = PREMARKET_HANDOFF_SCHEMA_V3
+    evidence_coverage: EvidenceCoverageV1
+
+
+class PremarketHandoffV4(PremarketHandoffV3):
+    schema_version: Literal["forecast-loop.premarket-handoff/v4"] = (
+        "forecast-loop.premarket-handoff/v4"
+    )
+    evidence_coverage: EvidenceCoverageV3
+
+
+class PremarketDraftBundleV2(PremarketDraftBundleV1):
+    schema_version: Literal["forecast-loop.premarket-handoff/v2"] = PREMARKET_HANDOFF_SCHEMA_V2
+
+    @model_validator(mode="after")
+    def validate_bundle(self) -> PremarketDraftBundleV2:
+        from .responses_v2 import validate_routed_generator
+
+        validate_routed_generator(self.generated_by, self.generated_at)
+        if {item.agent_id for item in self.drafts} != set(CODEX_AGENT_IDS):
+            raise ValueError("draft bundle requires every assignment")
+        if len({item.assignment_id for item in self.drafts}) != len(self.drafts):
+            raise ValueError("draft assignment IDs must be unique")
+        failed = self.generated_by.get("primary_failed_at")
+        if failed and datetime.fromisoformat(failed) > self.generated_at:
+            raise ValueError("primary failure cannot follow draft generation")
+        return self
+
+
+class PremarketDraftBundleV3(PremarketDraftBundleV2):
+    schema_version: Literal["forecast-loop.premarket-handoff/v3"] = PREMARKET_HANDOFF_SCHEMA_V3
+
+
+class PremarketDraftBundleV4(PremarketDraftBundleV3):
+    schema_version: Literal["forecast-loop.premarket-handoff/v4"] = (
+        "forecast-loop.premarket-handoff/v4"
+    )
+
+
+def parse_premarket_handoff(raw: bytes | str) -> PremarketHandoffV1:
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("premarket JSON must be an object")
+    model = (
+        PremarketHandoffV4
+        if payload.get("schema_version") == "forecast-loop.premarket-handoff/v4"
+        else PremarketHandoffV3
+        if payload.get("schema_version") == PREMARKET_HANDOFF_SCHEMA_V3
+        else PremarketHandoffV2
+        if payload.get("schema_version") == PREMARKET_HANDOFF_SCHEMA_V2
+        else PremarketHandoffV1
+    )
+    return model.model_validate(payload)
+
+
+def parse_premarket_drafts(raw: bytes | str) -> PremarketDraftBundleV1:
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("premarket JSON must be an object")
+    model = (
+        PremarketDraftBundleV4
+        if payload.get("schema_version") == "forecast-loop.premarket-handoff/v4"
+        else PremarketDraftBundleV3
+        if payload.get("schema_version") == PREMARKET_HANDOFF_SCHEMA_V3
+        else PremarketDraftBundleV2
+        if payload.get("schema_version") == PREMARKET_HANDOFF_SCHEMA_V2
+        else PremarketDraftBundleV1
+    )
+    return model.model_validate(payload)
+
+
 class PremarketForecastBodyV1(ContractModel):
     schema_version: Literal["forecast-loop.premarket-forecast/v1"] = PREMARKET_FORECAST_SCHEMA_V1
     run_id: str
@@ -666,6 +780,17 @@ def finalize_premarket_forecast(
     *,
     accepted_at: datetime,
 ) -> PremarketForecastV1:
+    if isinstance(handoff, PremarketHandoffV3):
+        handoff = type(handoff).model_validate_json(handoff.model_dump_json())
+        validate_coverage(
+            handoff.evidence_coverage, handoff.snapshot, handoff.assignments, bundle.drafts
+        )
+    if bundle.schema_version != handoff.schema_version:
+        raise ValueError("draft provider policy differs from sealed handoff")
+    if isinstance(handoff, PremarketHandoffV2):
+        failed = bundle.generated_by.get("primary_failed_at")
+        if failed and datetime.fromisoformat(failed) < handoff.prepared_at:
+            raise ValueError("primary failure predates sealed handoff")
     if bundle.run_id != handoff.run_id or bundle.request_hash != handoff.request_hash:
         raise ValueError("draft bundle does not bind the premarket handoff")
     if accepted_at.tzinfo is None or accepted_at.utcoffset() is None:
@@ -703,6 +828,11 @@ def finalize_premarket_forecast(
     assert strategy.probabilities is not None
     assert critic.risk_severity is not None
     discount = {"none": 0.0, "low": 0.05, "medium": 0.12, "high": 0.20}[critic.risk_severity]
+    gaps = (
+        coverage_gaps(handoff.evidence_coverage) if isinstance(handoff, PremarketHandoffV4) else []
+    )
+    if gaps:
+        discount = max(discount, 0.35)
     uniform = 1.0 / 3.0
     values = {
         label: (1.0 - discount) * getattr(strategy.probabilities, label) + discount * uniform
@@ -728,7 +858,8 @@ def finalize_premarket_forecast(
         probabilities=probabilities,
         threshold=0.25 * handoff.snapshot.volatility_20d,
         risk_severity=critic.risk_severity,
-        rationale=strategy.rationale,
+        rationale=(DEGRADED_WARNING + "（" + ", ".join(gaps) + "）。" if gaps else "")
+        + strategy.rationale,
         evidence_item_ids=evidence_ids,
         wiki_references=[item.wiki_reference for item in handoff.assignments],
     )

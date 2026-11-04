@@ -1,5 +1,9 @@
 # Changelog
 
+- Show explicitly labeled intraday probability supplements with actual publication times, separate from premarket records and scored close-return forecasts.
+
+- Add explicit premarket v4 partial-evidence forecasts with disclosed gaps and conservative probability shrinkage; retain legacy source, cutoff and persistence checks.
+
 All notable public changes to forecast-loop are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -7,11 +11,63 @@ and public releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+- Add explicit opt-in evidence coverage v2 for degraded predictions from attributed
+  media reports. Preserve missing-original reasons, require unverified-media
+  warnings in evidence and cited drafts, and label persisted forecasts. Existing
+  strict coverage and historical handoffs retain their semantics.
+
+- Add an isolated read-only public showcase with sealed focused-v2 forecast
+  export, separate formal/Shadow statistics, update-expiry notices, and a static
+  build that excludes operational routes, private prose and model credentials.
+
+- Add opt-in Responses v5 and premarket v3 policy evidence coverage: seal collection windows, receipts and required events; reject incomplete inputs and missing macro/Strategy citations before persistence. Historical contracts remain readable.
+
+
+- Default new focused-v2 API tasks to handoff v4: validate snapshot-bound,
+  assignment-scoped evidence admission before consuming an anchor date; seal
+  host-computed thresholds; accept auditable `not_ready` results without creating
+  forecasts or triggering Codex fallback. Add horizon-specific prediction and
+  semantic blind-review prompts. Prepared API v1-v3 and Codex contracts remain intact.
+
+- Add opt-in v2 premarket handoffs sealing API-first drafting and one quota or availability Codex fallback, with host-recorded provider identity and shared deadline checks. Existing v1 tasks remain immutable.
+
 ### Added
 
 - A keyless first-forecast example that exports and verifies a synthetic run
   bundle and demonstrates rejection of a tampered export, plus an English
   usage guide and scoped Context7 documentation configuration.
+- Optional versioned API-first prediction handoffs with host-recorded Codex fallback for confirmed quota or availability failures; historical handoffs remain unchanged.
+
+
+### Fixed
+
+- Accept the reviewed Tushare provider domain for Live evidence provenance,
+  preserving HTTPS, hostname-boundary, source-time and content-hash validation.
+- Recognize explicit quota and service failure codes inside nested SSE error
+  envelopes so sealed Codex fallback works after streaming has begun. Ordinary
+  rate limits, ambiguous errors and incomplete drafts still stop without fallback.
+- Receive focused-v2 Responses drafts over bounded SSE streaming and accept
+  only a validated `response.completed` payload. Long predictions no longer
+  wait for the entire generated response before the connection receives data;
+  partial or failed streams never publish drafts.
+- Bind model-generated Wiki entry IDs and section slugs to the exact frozen
+  choices for research, strategy and critic drafts, preserving post-response
+  citation validation and recording a new prompt version.
+
+### Added
+
+- Versioned API-first prediction and blind-review handoffs can seal a Codex
+  fallback limited to confirmed quota exhaustion or connection, timeout and
+  service-availability failures. Actual provider/model and failure provenance
+  remain inspectable; authentication, ordinary rate limits and invalid outputs
+  never trigger fallback. The installed official client retains its login.
+- Responses handoff v2 explicitly seals Demo/Live mode and the matching prompt
+  contract, keeping synthetic integration forecasts separate from Live evidence
+  admission. Existing API v1 and Codex handoffs retain their original semantics.
+- An opt-in OpenAI Responses API draft writer for focused v2 predictions and
+  outcome-blind reasoning reviews using `gpt-6.1-sol / high`. Versioned API
+  handoffs retain provider provenance, response IDs and token usage, while
+  Codex contracts, deterministic CIO, finalize checks and human gates remain intact.
 - A separate 09:15 pre-market protocol for CSI 1000 open-to-open forecasts,
   with frozen overnight news, global-market and FX/rates evidence, Agent-level
   routing, Wiki bindings, deterministic risk discounting, sealed evaluation,

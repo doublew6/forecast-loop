@@ -1,6 +1,6 @@
 """File-first focused v2 research workflow and deterministic evaluation.
 
-Codex may write only ``drafts.json`` and ``reasoning/drafts.json``.  Python
+Codex and API draft writers produce only ``drafts.json`` and ``reasoning/drafts.json``. Python
 owns the program, snapshot, assignment identities, hashes, scoring, persistence,
 and activation lane.  The service intentionally has no HTTP mutation surface.
 """
@@ -24,6 +24,12 @@ from sqlalchemy.orm import selectinload
 from ..config import Settings
 from ..db import Database
 from ..domain import AGENT_BY_ID
+from ..evidence_coverage import EvidenceCoverageV1, validate_coverage
+from ..evidence_coverage_v2 import (
+    DEGRADED_FORECAST_WARNING,
+    EvidenceCoverageV2,
+    has_reported_policy,
+)
 from ..models import (
     AgentSignalV2Record,
     AgentTrace,
@@ -38,6 +44,12 @@ from ..models import (
     ResearchActivationEventV2,
     ResearchRunV2,
     SignalEvaluationV2,
+)
+from ..research_readiness import (
+    EvidenceAdmissionV1,
+    EvidenceReadinessV1,
+    ReadinessIssueV1,
+    assess_evidence_readiness,
 )
 from ..research_v2 import (
     AGENT_SIGNAL_SCHEMA_V2,
@@ -74,6 +86,30 @@ from ..research_v2 import (
     target_date,
     threshold_for_target,
 )
+from ..responses_v2 import (
+    RESPONSES_EFFORT,
+    RESPONSES_HANDOFF_SCHEMA,
+    RESPONSES_HANDOFF_SCHEMA_V2,
+    RESPONSES_HANDOFF_SCHEMA_V3,
+    RESPONSES_HANDOFF_SCHEMA_V4,
+    RESPONSES_MODEL,
+    ResponsesAssignmentV1,
+    ResponsesDraftBundleV1,
+    ResponsesDraftBundleV2,
+    ResponsesDraftBundleV3,
+    ResponsesDraftBundleV4,
+    ResponsesDraftBundleV5,
+    ResponsesHandoffRequestV1,
+    ResponsesHandoffRequestV2,
+    ResponsesHandoffRequestV3,
+    ResponsesHandoffRequestV4,
+    ResponsesHandoffRequestV5,
+    ResponsesReasoningTaskV1,
+    ResponsesReasoningTaskV2,
+    ResponsesReasoningTaskV3,
+    ResponsesReviewBundleV1,
+    ResponsesReviewBundleV2,
+)
 from .agent_tracing import TraceRecorder
 from .snapshot import validate_trusted_source_url
 from .wiki import FrozenWikiCatalog, WikiCatalog
@@ -102,6 +138,19 @@ class ResearchV2Error(RuntimeError):
     pass
 
 
+class ResearchInputsNotReady(ResearchV2Error):
+    def __init__(self, report: EvidenceReadinessV1):
+        super().__init__("research inputs are not ready; no prediction task created")
+        self.report = report
+
+
+def responses_fallback_enabled(request: ResponsesHandoffRequestV1) -> bool:
+    return (
+        isinstance(request, ResponsesHandoffRequestV3)
+        and request.fallback_policy == "quota-or-availability/v1"
+    )
+
+
 class ReceiptV2(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal["forecast-loop.research-receipt/v2"] = (
@@ -126,13 +175,50 @@ class ReceiptV2(BaseModel):
         return self
 
 
+class NotReadyReceiptV1(ReceiptV2):
+    schema_version: Literal["forecast-loop.research-not-ready-receipt/v1"] = (
+        "forecast-loop.research-not-ready-receipt/v1"
+    )
+    status: Literal["failed"] = "failed"
+    failure_category: Literal["not_ready"] = "not_ready"
+    issues: list[ReadinessIssueV1]
+
+
 def prepare_research_run(
     database: Database,
     settings: Settings,
     *,
     snapshot_path: Path,
     mode: Literal["demo", "live"],
+    provider: Literal["codex", "openai_responses"] = "codex",
+    codex_fallback: bool = False,
+    responses_protocol: Literal["v4", "legacy"] = "v4",
+    evidence_admission_path: Path | None = None,
+    evidence_coverage: EvidenceCoverageV1 | EvidenceCoverageV2 | None = None,
 ) -> Path:
+    if evidence_coverage is not None and (
+        provider != "openai_responses" or responses_protocol != "v4"
+    ):
+        raise ResearchV2Error("coverage requires API-first readiness handoffs")
+    if provider not in {"codex", "openai_responses"}:
+        raise ResearchV2Error("unknown v2 draft provider")
+    if codex_fallback and provider != "openai_responses":
+        raise ResearchV2Error("Codex fallback requires an API-first handoff")
+    if evidence_admission_path is not None and (
+        provider != "openai_responses" or responses_protocol != "v4"
+    ):
+        raise ResearchV2Error("evidence admission requires the Responses v4 protocol")
+    if responses_protocol not in {"v4", "legacy"}:
+        raise ResearchV2Error("unknown Responses protocol")
+    responses_schema = (
+        "forecast-loop.responses-handoff/v5"
+        if evidence_coverage is not None
+        else RESPONSES_HANDOFF_SCHEMA_V4
+        if responses_protocol == "v4"
+        else RESPONSES_HANDOFF_SCHEMA_V3
+        if codex_fallback
+        else RESPONSES_HANDOFF_SCHEMA_V2
+    )
     snapshot = _read_model(snapshot_path, EvidenceSnapshotV2)
     if mode == "live":
         _validate_live_snapshot_sources(snapshot)
@@ -143,6 +229,16 @@ def prepare_research_run(
             "program_hash": program.content_hash,
             "snapshot_hash": snapshot.content_hash,
             "mode": mode,
+            **(
+                {
+                    "draft_provider": provider,
+                    "model": RESPONSES_MODEL,
+                    "effort": RESPONSES_EFFORT,
+                    "prompt_version": responses_schema,
+                }
+                if provider == "openai_responses"
+                else {}
+            ),
         }
     )
     now = datetime.now(ZoneInfo(settings.timezone))
@@ -158,16 +254,84 @@ def prepare_research_run(
         ).all()
         if len(existing) > 1:
             raise ResearchV2Error(
-                "multiple frozen v2 runs already exist for the same program, mode, "
-                "and anchor date"
+                "multiple frozen v2 runs already exist for the same program, mode, and anchor date"
             )
         if existing:
             frozen = existing[0]
             if frozen.status == "failed":
+                raise ResearchV2Error("the v2 anchor date already belongs to a failed frozen run")
+            frozen_dir = _validated_job_dir(settings, frozen.id, must_exist=True)
+            frozen_request = read_research_request(frozen_dir / "input.json")
+            if isinstance(frozen_request, ResponsesHandoffRequestV1) != (
+                provider == "openai_responses"
+            ):
+                raise ResearchV2Error("the anchor date is already sealed to another draft provider")
+            if (
+                isinstance(frozen_request, ResponsesHandoffRequestV1)
+                and responses_fallback_enabled(frozen_request) != codex_fallback
+            ):
                 raise ResearchV2Error(
-                    "the v2 anchor date already belongs to a failed frozen run"
+                    "the anchor date is already sealed to another fallback policy"
                 )
-            return _validated_job_dir(settings, frozen.id, must_exist=True)
+            if getattr(frozen_request, "evidence_coverage", None) != evidence_coverage:
+                raise ResearchV2Error(
+                    "the anchor date is already sealed to another coverage contract"
+                )
+            return frozen_dir
+        # Admission precedes the formal run/trace: insufficient inputs do not consume
+        # an immutable anchor date and can be corrected before preparing a new task.
+        wiki = WikiCatalog.from_settings(settings).freeze(
+            allow_demo_fallback=mode == "demo",
+            cutoff=snapshot.data_cutoff if mode == "live" else None,
+        )
+        latest_signals = _latest_natural_views(database, mode=mode)
+        context_signals = {
+            identity: signal
+            for identity, signal in latest_signals.items()
+            if signal.target_date > snapshot.base_session
+            and signal.agent_id in {"macro_policy_agent", "ai_storage_industry_agent"}
+        }
+        assignments = _build_assignments(
+            database,
+            snapshot,
+            wiki,
+            context_signals=context_signals,
+            latest_signals=latest_signals,
+            baselines=_frozen_baselines(database, snapshot.data_cutoff, mode=mode),
+            mode=mode,
+        )
+        readiness_body = {}
+        if provider == "openai_responses" and responses_protocol == "v4":
+            admission = (
+                _read_model(evidence_admission_path, EvidenceAdmissionV1)
+                if evidence_admission_path
+                else None
+            )
+            readiness = assess_evidence_readiness(snapshot, assignments, admission, mode=mode)
+            if readiness.status == "not_ready":
+                raise ResearchInputsNotReady(readiness)
+            readiness_body = {
+                "evidence_admission": admission,
+                "evidence_readiness": readiness,
+                "fallback_policy": "quota-or-availability/v1" if codex_fallback else "none",
+                "neutral_thresholds": {
+                    a.target_id: threshold_for_target(snapshot, a.target_id) for a in assignments
+                },
+            }
+            input_hash = content_hash(
+                {
+                    "base_input_hash": input_hash,
+                    "readiness": readiness.model_dump(mode="json"),
+                }
+            )
+        if evidence_coverage is not None:
+            try:
+                validate_coverage(evidence_coverage, snapshot, assignments)
+            except ValueError as exc:
+                raise ResearchV2Error(str(exc)) from exc
+            input_hash = content_hash(
+                {"base_input_hash": input_hash, "evidence_coverage": evidence_coverage}
+            )
         row = ResearchRunV2(
             id=str(uuid4()),
             schema_version=RESEARCH_RUN_SCHEMA_V2,
@@ -220,17 +384,6 @@ def prepare_research_run(
         attributes={"handoff_stage": "prepare", "evidence_count": len(snapshot.items)},
     )
 
-    wiki = WikiCatalog.from_settings(settings).freeze(
-        allow_demo_fallback=mode == "demo",
-        cutoff=snapshot.data_cutoff if mode == "live" else None,
-    )
-    latest_signals = _latest_natural_views(database, mode=mode)
-    context_signals = {
-        identity: row
-        for identity, row in latest_signals.items()
-        if row.target_date > snapshot.base_session
-        and row.agent_id in {"macro_policy_agent", "ai_storage_industry_agent"}
-    }
     for signal in context_signals.values():
         _trace_link(
             recorder,
@@ -243,16 +396,24 @@ def prepare_research_run(
             relation="reused",
             content_hash=signal.content_hash,
         )
-    baselines = _frozen_baselines(database, snapshot.data_cutoff, mode=mode)
-    assignments = _build_assignments(
-        database,
-        snapshot,
-        wiki,
-        context_signals=context_signals,
-        latest_signals=latest_signals,
-        baselines=baselines,
-        mode=mode,
-    )
+    if provider == "openai_responses":
+        assignments = [
+            ResponsesAssignmentV1.model_validate(
+                {
+                    **item.model_dump(),
+                    **(
+                        {
+                            "producer": "openai_responses",
+                            "model_name": RESPONSES_MODEL,
+                            "prompt_version": responses_schema,
+                        }
+                        if item.producer == "codex"
+                        else {}
+                    ),
+                }
+            )
+            for item in assignments
+        ]
     request_body = {
         "run_id": run_id,
         "program": program,
@@ -266,12 +427,27 @@ def prepare_research_run(
         "input_hash": input_hash,
         "trace_id": trace_id,
         "assignments": assignments,
+        **({"mode": mode} if provider == "openai_responses" else {}),
+        **readiness_body,
     }
-    normalized_request = CodexHandoffRequestV3.model_construct(
+    if evidence_coverage is not None:
+        request_body["evidence_coverage"] = evidence_coverage
+    request_type = (
+        ResponsesHandoffRequestV5
+        if evidence_coverage is not None
+        else ResponsesHandoffRequestV4
+        if provider == "openai_responses" and responses_protocol == "v4"
+        else ResponsesHandoffRequestV3
+        if codex_fallback
+        else ResponsesHandoffRequestV2
+        if provider == "openai_responses"
+        else CodexHandoffRequestV3
+    )
+    normalized_request = request_type.model_construct(
         **request_body,
         request_hash="0" * 64,
     )
-    request = CodexHandoffRequestV3(
+    request = request_type(
         **request_body,
         request_hash=content_hash(normalized_request, exclude=("request_hash",)),
     )
@@ -283,19 +459,26 @@ def prepare_research_run(
         job_dir / "drafts.template.json",
         canonical_json(
             {
-                "schema_version": CODEX_HANDOFF_SCHEMA_V3,
+                "schema_version": request.schema_version,
                 "run_id": run_id,
                 "request_hash": request.request_hash,
                 "generated_at": now,
                 "generated_by": {
-                    "surface": "codex",
-                    "model": FROZEN_CODEX_MODEL,
+                    "surface": provider,
+                    "model": (
+                        RESPONSES_MODEL if provider == "openai_responses" else FROZEN_CODEX_MODEL
+                    ),
                     "reasoning_effort": FROZEN_CODEX_EFFORT,
                 },
+                **(
+                    {"status": "ready", "issues": []}
+                    if isinstance(request, ResponsesHandoffRequestV4)
+                    else {}
+                ),
                 "drafts": [
                     {"assignment_id": item.assignment_id, "draft": None}
                     for item in assignments
-                    if item.producer == "codex"
+                    if item.producer != "deterministic"
                 ],
             }
         ),
@@ -315,7 +498,7 @@ def prepare_research_run(
         workflow_kind="prediction",
         subject_id=run_id,
         node_id="run.awaiting_external_draft",
-        name="external Codex draft receipt pending",
+        name=f"external {provider} draft receipt pending",
         span_kind="external",
         parent_span_id=prepare_span,
         started_at=now,
@@ -364,6 +547,11 @@ def _finalize_research_run_attempt(
         job_dir=job_dir,
         raw_drafts=raw_drafts,
     )
+    if isinstance(bundle, ResponsesDraftBundleV4) and bundle.status == "not_ready":
+        return _finalize_not_ready_run(
+            database, settings, job_dir=job_dir, request=request,
+            bundle=bundle, raw_drafts=raw_drafts, now=now,
+        )
     with database.session_factory() as session:
         persisted_run = session.get(ResearchRunV2, request.run_id)
         if persisted_run is None:
@@ -381,6 +569,10 @@ def _finalize_research_run_attempt(
     if accepted_at.tzinfo is None or accepted_at.utcoffset() is None:
         raise ResearchV2Error("finalize host time must be timezone-aware")
     accepted_at = accepted_at.astimezone(ZoneInfo(settings.timezone))
+    if isinstance(request, ResponsesHandoffRequestV1) and not (
+        request.prepared_at <= bundle.generated_at <= accepted_at
+    ):
+        raise ResearchV2Error("API draft generation time is outside its prepared attempt")
     deadline = _prediction_finalize_deadline(request, settings)
     if accepted_at >= deadline:
         raise ResearchV2Error(
@@ -390,9 +582,7 @@ def _finalize_research_run_attempt(
     # validate_research_draft_bundle guarantees one record per Codex assignment,
     # so this lookup cannot silently overwrite a duplicate record.
     by_assignment = {item.assignment_id: item for item in bundle.drafts}
-    codex_assignments = [
-        item for item in request.assignments if item.producer == "codex"
-    ]
+    codex_assignments = [item for item in request.assignments if item.producer != "deterministic"]
     assignments = {item.assignment_id: item for item in request.assignments}
 
     now = accepted_at
@@ -416,7 +606,7 @@ def _finalize_research_run_attempt(
         workflow_kind="prediction",
         subject_id=request.run_id,
         node_id="run.external_draft_receipt",
-        name="external Codex draft receipt",
+        name=f"external {bundle.generated_by['surface']} draft receipt",
         span_kind="external",
         started_at=bundle.generated_at,
         completed_at=now,
@@ -441,7 +631,17 @@ def _finalize_research_run_attempt(
         signals: dict[str, AgentSignalV2Record] = {}
         for assignment in codex_assignments:
             record = by_assignment[assignment.assignment_id]
-            signal = _seal_signal(request, assignment, record.draft, created_at=now)
+            signal = _seal_signal(
+                request,
+                assignment,
+                record.draft,
+                created_at=now,
+                model_name=(
+                    bundle.generated_by.get("response_model", bundle.generated_by["model"])
+                    if isinstance(bundle, ResponsesDraftBundleV1)
+                    else None
+                ),
+            )
             row = _signal_record(signal)
             session.add(row)
             signals[assignment.assignment_id] = row
@@ -475,6 +675,8 @@ def _finalize_research_run_attempt(
             strategy = AgentSignalEnvelopeV2.model_validate(signals[strategy_id].envelope)
             critic = AgentSignalEnvelopeV2.model_validate(signals[critic_id].envelope)
             cio_draft = _deterministic_cio_draft(strategy, critic, cio_assignment)
+            if has_reported_policy(getattr(request, "evidence_coverage", None)):
+                cio_draft.rationale = DEGRADED_FORECAST_WARNING + "\n" + cio_draft.rationale
             cio_signal = _seal_signal(
                 request,
                 cio_assignment,
@@ -595,6 +797,70 @@ def _finalize_research_run_attempt(
     return run
 
 
+def _finalize_not_ready_run(
+    database: Database,
+    settings: Settings,
+    *,
+    job_dir: Path,
+    request: ResponsesHandoffRequestV4,
+    bundle: ResponsesDraftBundleV4,
+    raw_drafts: bytes,
+    now: datetime | None,
+) -> ResearchRunV2:
+    """Persist a terminal input rejection, never signals, forecasts or blind reviews."""
+    accepted_at = now or datetime.now(ZoneInfo(settings.timezone))
+    raw_hash = __import__("hashlib").sha256(raw_drafts).hexdigest()
+    with database.session_factory() as session:
+        run = session.get(ResearchRunV2, request.run_id)
+        if run is None or (
+            run.input_hash != request.input_hash or run.request_hash != request.request_hash
+            or run.snapshot_hash != request.snapshot.content_hash
+            or run.program_hash != request.program.content_hash or run.mode != request.mode
+        ):
+            raise ResearchV2Error("not-ready result does not bind the persisted run")
+        if run.status == "failed" and run.error == "not_ready":
+            receipt = NotReadyReceiptV1.model_validate(run.receipt)
+            if receipt.run_id != run.id or receipt.drafts_raw_hash != raw_hash:
+                raise ResearchV2Error("not-ready receipt no longer binds the sealed result")
+        else:
+            if run.status != "awaiting_draft":
+                raise ResearchV2Error("not-ready result cannot replace a terminal run")
+            if accepted_at.utcoffset() is None or not (
+                request.prepared_at <= bundle.generated_at <= accepted_at
+                < _prediction_finalize_deadline(request, settings)
+            ):
+                raise ResearchV2Error("not-ready result is outside the prepared attempt cutoff")
+            body = NotReadyReceiptV1.model_construct(
+                run_id=run.id, program_hash=run.program_hash, snapshot_hash=run.snapshot_hash,
+                input_hash=run.input_hash, request_hash=request.request_hash,
+                drafts_raw_hash=raw_hash, signal_ids=[], forecast_ids=[],
+                completed_at=accepted_at, issues=bundle.issues, receipt_hash="0" * 64,
+            ).model_dump(mode="json")
+            body["receipt_hash"] = content_hash(body, exclude=("receipt_hash",))
+            receipt = NotReadyReceiptV1.model_validate(body)
+            run.status = "failed"
+            run.error = "not_ready"
+            run.completed_at = accepted_at
+            run.receipt = receipt.model_dump(mode="json")
+            session.commit()
+            session.refresh(run)
+    path = job_dir / "receipt.json"
+    if path.exists() or path.is_symlink():
+        if _read_model(path, NotReadyReceiptV1) != receipt:
+            raise ResearchV2Error("not-ready receipt conflicts with immutable database receipt")
+    else:
+        _atomic_write(path, canonical_json(receipt))
+    recorder = TraceRecorder(database, settings)
+    trace_id = recorder.trace_id_for("prediction", request.run_id, running_only=True)
+    if trace_id is not None:
+        recorder.finish_trace(
+            workflow_kind="prediction", subject_id=request.run_id, trace_id=trace_id,
+            status="failed", error=ResearchV2Error("research inputs not_ready"),
+            attributes={"failure_category": "not_ready", "forecast_count": 0},
+        )
+    return run
+
+
 def prepare_reasoning_review(
     database: Database,
     settings: Settings,
@@ -615,8 +881,79 @@ def prepare_reasoning_review(
             reasoning_review_input(AgentSignalEnvelopeV2.model_validate(item.envelope))
             for item in sorted(run.signals, key=lambda item: item.id)
         ]
+        prediction_signal_ids = {
+            item.id
+            for item in run.signals
+            if item.envelope.get("generation_reason") != "external_shadow"
+        }
+    request = read_research_request(job_dir / "input.json")
+    uses_responses = isinstance(request, ResponsesHandoffRequestV1)
+    if uses_responses:
+        inputs = [item for item in inputs if item.signal_id in prediction_signal_ids]
     review_dir = job_dir / "reasoning"
+    if review_dir.is_symlink():
+        raise ResearchV2Error("reasoning directory must not be a symlink")
     review_dir.mkdir(exist_ok=True)
+    if uses_responses:
+        if (review_dir / "input.json").exists() or (review_dir / "input.json").is_symlink():
+            validate_responses_reasoning_task(database, settings, job_dir=job_dir)
+            return review_dir
+        task_type = (
+            ResponsesReasoningTaskV3
+            if isinstance(request, ResponsesHandoffRequestV4)
+            else ResponsesReasoningTaskV2
+            if responses_fallback_enabled(request)
+            else ResponsesReasoningTaskV1
+        )
+        body = task_type.model_construct(
+            run_id=run_id,
+            prediction_request_hash=request.request_hash,
+            reviews=inputs,
+            task_hash="0" * 64,
+            **({"fallback_policy": request.fallback_policy, "prediction_context": request}
+               if isinstance(request, ResponsesHandoffRequestV4) else {}),
+        )
+        task = task_type.model_validate(
+            {**body.model_dump(), "task_hash": content_hash(body, exclude=("task_hash",))}
+        )
+        _atomic_write(review_dir / "input.json", canonical_json(task))
+        _atomic_write(
+            review_dir / "drafts.template.json",
+            canonical_json(
+                {
+                    "schema_version": (
+                        "forecast-loop.responses-reasoning-drafts/v2"
+                        if isinstance(task, ResponsesReasoningTaskV2)
+                        else "forecast-loop.responses-reasoning-drafts/v1"
+                    ),
+                    "run_id": run_id,
+                    "task_hash": task.task_hash,
+                    "generated_at": datetime.now(ZoneInfo(settings.timezone)),
+                    "generated_by": {
+                        "surface": "openai_responses",
+                        "model": RESPONSES_MODEL,
+                        "reasoning_effort": RESPONSES_EFFORT,
+                    },
+                    "reviews": [
+                        {
+                            "signal_id": item.signal_id,
+                            "review_input_hash": item.review_input_hash,
+                            "rubric": None,
+                        }
+                        for item in inputs
+                    ],
+                }
+            ),
+        )
+        _atomic_write(
+            review_dir / "INSTRUCTIONS.md",
+            (
+                b"# Blind Responses reasoning review\n\nUse only input.json; no outcomes. "
+                b"Write only drafts.json. Score each rubric dimension 0-2 using "
+                b"gpt-6.1-sol / high. Python retains all validation and human-review gates.\n"
+            ),
+        )
+        return review_dir
     _atomic_write(
         review_dir / "input.json",
         canonical_json(
@@ -661,10 +998,26 @@ def finalize_reasoning_review(
 ) -> list[ReasoningReviewV2]:
     job_dir = _validated_explicit_job_dir(settings, job_dir)
     review_dir = job_dir / "reasoning"
+    if review_dir.is_symlink():
+        raise ResearchV2Error("reasoning directory must not be a symlink")
     task = _safe_read_json(review_dir / "input.json")
     if task.get("outcomes_included") is not False:
         raise ResearchV2Error("reasoning review task is not blind")
-    bundle = _read_model(review_dir / "drafts.json", ReasoningReviewDraftBundleV2)
+    request = read_research_request(job_dir / "input.json")
+    if isinstance(request, ResponsesHandoffRequestV1):
+        api_task = validate_responses_reasoning_task(database, settings, job_dir=job_dir)
+        bundle = _read_model(
+            review_dir / "drafts.json",
+            ResponsesReviewBundleV2
+            if isinstance(api_task, ResponsesReasoningTaskV2)
+            else ResponsesReviewBundleV1,
+        )
+        if bundle.task_hash != api_task.task_hash:
+            raise ResearchV2Error("reasoning drafts do not bind the sealed API task")
+    else:
+        if task.get("schema_version") != "forecast-loop.reasoning-review-task/v2":
+            raise ResearchV2Error("reasoning task provider does not match its frozen prediction")
+        bundle = _read_model(review_dir / "drafts.json", ReasoningReviewDraftBundleV2)
     run_id = task.get("run_id")
     if bundle.run_id != run_id:
         raise ResearchV2Error("reasoning drafts do not bind the review task")
@@ -682,18 +1035,29 @@ def finalize_reasoning_review(
     signal_artifacts: list[tuple[str, str]] = []
     with database.session_factory() as session:
         run = session.scalar(
-            select(ResearchRunV2).options(selectinload(ResearchRunV2.signals)).where(
-                ResearchRunV2.id == run_id
-            )
+            select(ResearchRunV2)
+            .options(selectinload(ResearchRunV2.signals))
+            .where(ResearchRunV2.id == run_id)
         )
         if run is None:
             raise ResearchV2Error("research run was not found")
+        if isinstance(bundle, ResponsesReviewBundleV1) and not (
+            ReceiptV2.model_validate(run.receipt).completed_at <= bundle.generated_at <= now
+        ):
+            raise ResearchV2Error(
+                "API reasoning generation time is outside its completed prediction"
+            )
+        if (
+            isinstance(bundle, ResponsesReviewBundleV2)
+            and bundle.generated_by["surface"] == "codex"
+            and datetime.fromisoformat(bundle.generated_by["primary_failed_at"])
+            < ReceiptV2.model_validate(run.receipt).completed_at
+        ):
+            raise ResearchV2Error("blind fallback failure predates its completed prediction")
         trace_mode = run.mode
         signals = {item.id: item for item in run.signals}
         existing_reviews = {
-            item.signal_id: item
-            for signal in run.signals
-            for item in signal.reasoning_reviews
+            item.signal_id: item for signal in run.signals for item in signal.reasoning_reviews
         }
         if existing_reviews:
             if set(existing_reviews) == set(input_by_signal):
@@ -736,8 +1100,7 @@ def finalize_reasoning_review(
         for row in rows:
             session.refresh(row)
         signal_artifacts = [
-            (signals[row.signal_id].id, signals[row.signal_id].content_hash)
-            for row in rows
+            (signals[row.signal_id].id, signals[row.signal_id].content_hash) for row in rows
         ]
     _trace_reasoning_review_finalize(
         database,
@@ -748,6 +1111,7 @@ def finalize_reasoning_review(
         rows=rows,
         signal_artifacts=signal_artifacts,
         occurred_at=now,
+        model_name=bundle.generated_by.get("response_model", bundle.generated_by["model"]),
     )
     return rows
 
@@ -989,9 +1353,7 @@ def create_reflection_v2(
             "actual_label": draft.actual_label,
         }
         if supplied_identity != expected_identity:
-            raise ResearchV2Error(
-                "v2 reflection identity does not match the evaluated forecast"
-            )
+            raise ResearchV2Error("v2 reflection identity does not match the evaluated forecast")
         envelope = draft.model_dump(mode="json")
         existing = session.scalar(
             select(ReflectionV2).where(ReflectionV2.forecast_id == forecast.id)
@@ -1000,9 +1362,7 @@ def create_reflection_v2(
             try:
                 stored = ReflectionDraftV2.model_validate(existing.envelope)
             except ValueError as exc:
-                raise ResearchV2Error(
-                    "stored v2 reflection envelope failed validation"
-                ) from exc
+                raise ResearchV2Error("stored v2 reflection envelope failed validation") from exc
             persisted_identity = {
                 "forecast_id": existing.forecast_id,
                 "forecast_hash": existing.forecast_hash,
@@ -1019,9 +1379,7 @@ def create_reflection_v2(
                 or existing.envelope != envelope
                 or persisted_identity != expected_identity
             ):
-                raise ResearchV2Error(
-                    "v2 reflection already exists with conflicting content"
-                )
+                raise ResearchV2Error("v2 reflection already exists with conflicting content")
             return existing
         body = {
             "forecast_id": forecast.id,
@@ -1092,9 +1450,7 @@ def review_reflection_v2(
             "occurred_at": now,
         }
         session.add(
-            ReflectionReviewEventV2(
-                id=str(uuid4()), content_hash=content_hash(body), **body
-            )
+            ReflectionReviewEventV2(id=str(uuid4()), content_hash=content_hash(body), **body)
         )
         session.commit()
         return row
@@ -1157,8 +1513,7 @@ def activate_d1_v2(
         previous = session.scalar(
             select(ResearchActivationEventV2)
             .where(
-                ResearchActivationEventV2.program_hash
-                == DEFAULT_RESEARCH_PROGRAM_V2.content_hash,
+                ResearchActivationEventV2.program_hash == DEFAULT_RESEARCH_PROGRAM_V2.content_hash,
                 ResearchActivationEventV2.target_id == CSI1000_D1_TARGET,
             )
             .order_by(ResearchActivationEventV2.occurred_at.desc())
@@ -1190,9 +1545,7 @@ def activate_d1_v2(
             "occurred_at": now,
             "previous_event_hash": previous.content_hash if previous else None,
         }
-        row = ResearchActivationEventV2(
-            id=str(uuid4()), content_hash=content_hash(body), **body
-        )
+        row = ResearchActivationEventV2(id=str(uuid4()), content_hash=content_hash(body), **body)
         session.add(row)
         session.commit()
         session.refresh(row)
@@ -1270,9 +1623,7 @@ def reasoning_reviews_v2(
     ]
     return {
         "items": items,
-        "next_cursor": (
-            _encode_review_cursor(page[-1]) if len(rows) > limit and page else None
-        ),
+        "next_cursor": (_encode_review_cursor(page[-1]) if len(rows) > limit and page else None),
     }
 
 
@@ -1454,8 +1805,7 @@ def _forecast_api_payload(row: ForecastV2 | None) -> dict[str, Any] | None:
                 "actual_label": evaluation.actual_label,
                 "brier_score": evaluation.brier_score,
                 "baseline_brier_score": evaluation.baseline_brier_score,
-                "brier_improvement": evaluation.baseline_brier_score
-                - evaluation.brier_score,
+                "brier_improvement": evaluation.baseline_brier_score - evaluation.brier_score,
                 "direction_correct": bool(evaluation.direction_correct),
                 "evaluated_at": evaluation.evaluated_at,
             }
@@ -1479,16 +1829,8 @@ def _scorecard_item(
         signal_kind,
         horizon,
     ) = identity
-    evaluations = [
-        evaluation
-        for row in rows
-        for evaluation in row.evaluations
-    ]
-    reasoning = [
-        review.total_score
-        for row in rows
-        for review in row.reasoning_reviews
-    ]
+    evaluations = [evaluation for row in rows for evaluation in row.evaluations]
+    reasoning = [review.total_score for row in rows for review in row.reasoning_reviews]
     average_brier = _mean([item.brier_score for item in evaluations])
     baseline_brier = _mean([item.baseline_brier_score for item in evaluations])
     classwise_ece = _classwise_ece(rows) if evaluations else None
@@ -1507,9 +1849,9 @@ def _scorecard_item(
         "signal_kind": signal_kind,
         "horizon": horizon,
         "sample_size": len(evaluations),
-        "independent_episodes": len({
-            (row.anchor_date, row.target_date) for row in rows if row.evaluations
-        }),
+        "independent_episodes": len(
+            {(row.anchor_date, row.target_date) for row in rows if row.evaluations}
+        ),
         "average_brier": average_brier,
         "baseline_brier": baseline_brier,
         "brier_skill": _relative_brier_skill(average_brier, baseline_brier),
@@ -1584,16 +1926,12 @@ def _risk_critic_diagnostics(
         "risk_flag_rate": risk_flags / critique_count if critique_count else 0.0,
         "evaluated_system_errors": evaluated_errors,
         "missed_risk_count": missed_risks,
-        "missed_risk_rate": (
-            missed_risks / evaluated_errors if evaluated_errors else None
-        ),
+        "missed_risk_rate": (missed_risks / evaluated_errors if evaluated_errors else None),
     }
 
 
 def _classwise_ece(rows: list[AgentSignalV2Record]) -> dict[str, float]:
-    pairs: dict[str, list[tuple[float, float]]] = {
-        label: [] for label in ("up", "neutral", "down")
-    }
+    pairs: dict[str, list[tuple[float, float]]] = {label: [] for label in ("up", "neutral", "down")}
     for row in rows:
         if not row.evaluations:
             continue
@@ -1603,9 +1941,7 @@ def _classwise_ece(rows: list[AgentSignalV2Record]) -> dict[str, float]:
             continue
         for evaluation in row.evaluations:
             for label, probability in probabilities.as_dict().items():
-                pairs[label].append(
-                    (probability, 1.0 if evaluation.actual_label == label else 0.0)
-                )
+                pairs[label].append((probability, 1.0 if evaluation.actual_label == label else 0.0))
     return {label: _ece(values) for label, values in pairs.items()}
 
 
@@ -1751,8 +2087,7 @@ def _build_assignments(
                 None,
             )
             state_available = prior is not None or any(
-                item.agent_id == agent_id
-                and item.signal_kind == SignalKindV2.NATURAL_VIEW
+                item.agent_id == agent_id and item.signal_kind == SignalKindV2.NATURAL_VIEW
                 for item in assignments
             )
             assignments.append(
@@ -1760,9 +2095,7 @@ def _build_assignments(
                     agent_id,
                     SignalKindV2.D1_IMPACT,
                     CSI1000_D1_TARGET,
-                    V2Horizon.D20
-                    if agent_id == "macro_policy_agent"
-                    else V2Horizon.W1,
+                    V2Horizon.D20 if agent_id == "macro_policy_agent" else V2Horizon.W1,
                     V2Horizon.D1,
                     snapshot,
                     wiki,
@@ -1770,9 +2103,7 @@ def _build_assignments(
                     state_available=state_available,
                     prior_signal_id=prior.id if prior else None,
                     context_signal_ids=[prior.id] if prior else [],
-                    depends_on_assignment_ids=(
-                        [current_natural_id] if current_natural_id else []
-                    ),
+                    depends_on_assignment_ids=([current_natural_id] if current_natural_id else []),
                     generation_reason="daily",
                 )
             )
@@ -1853,19 +2184,13 @@ def _assignment(
     section = entry.sections[0]
     role = AGENT_BY_ID[agent_id].role
     return HandoffAssignmentV3(
-        assignment_id=_assignment_id(
-            agent_id, kind, target_id, natural_horizon, decision_horizon
-        ),
+        assignment_id=_assignment_id(agent_id, kind, target_id, natural_horizon, decision_horizon),
         agent_id=agent_id,
         agent_version=AGENT_BY_ID[agent_id].version,
         model_name=(
-            FROZEN_CODEX_MODEL
-            if producer == "codex"
-            else "forecast-loop-deterministic-cio"
+            FROZEN_CODEX_MODEL if producer == "codex" else "forecast-loop-deterministic-cio"
         ),
-        prompt_version=(
-            CODEX_HANDOFF_SCHEMA_V3 if producer == "codex" else "deterministic-cio/v2"
-        ),
+        prompt_version=(CODEX_HANDOFF_SCHEMA_V3 if producer == "codex" else "deterministic-cio/v2"),
         producer=producer,
         signal_kind=kind,
         target_id=target_id,
@@ -1918,6 +2243,7 @@ def _seal_signal(
     draft: AgentSignalDraftV2,
     *,
     created_at: datetime,
+    model_name: str | None = None,
 ) -> AgentSignalEnvelopeV2:
     baseline = assignment.baseline_probabilities
     threshold = (
@@ -1932,7 +2258,7 @@ def _seal_signal(
         "run_id": request.run_id,
         "agent_id": assignment.agent_id,
         "agent_version": assignment.agent_version,
-        "model_name": assignment.model_name,
+        "model_name": model_name or assignment.model_name,
         "prompt_version": assignment.prompt_version,
         "target_id": assignment.target_id,
         "signal_kind": assignment.signal_kind,
@@ -2051,9 +2377,7 @@ def _is_live_outcome_bound(database: Database, observation_id: str) -> bool:
 def _validate_live_snapshot_sources(snapshot: EvidenceSnapshotV2) -> None:
     """Enforce the reviewed provenance allowlist at the live v2 trust boundary."""
 
-    validate_trusted_source_url(
-        snapshot.calendar_source.source_url, label="v2 trading calendar"
-    )
+    validate_trusted_source_url(snapshot.calendar_source.source_url, label="v2 trading calendar")
     for instrument in snapshot.instruments.values():
         for row in instrument.returns:
             validate_trusted_source_url(
@@ -2216,8 +2540,7 @@ def _request_has_decision_target(
     target_id: str,
 ) -> bool:
     return any(
-        item.target_id == target_id
-        and item.signal_kind == SignalKindV2.DECISION_FORECAST
+        item.target_id == target_id and item.signal_kind == SignalKindV2.DECISION_FORECAST
         for item in request.assignments
     )
 
@@ -2248,8 +2571,7 @@ def _effective_lane(
     latest = session.scalar(
         select(ResearchActivationEventV2)
         .where(
-            ResearchActivationEventV2.program_hash
-            == DEFAULT_RESEARCH_PROGRAM_V2.content_hash,
+            ResearchActivationEventV2.program_hash == DEFAULT_RESEARCH_PROGRAM_V2.content_hash,
             ResearchActivationEventV2.target_id == target_id,
         )
         .order_by(ResearchActivationEventV2.occurred_at.desc())
@@ -2258,6 +2580,64 @@ def _effective_lane(
 
 
 def _prediction_instructions(request: CodexHandoffRequestV3) -> str:
+    if isinstance(request, ResponsesHandoffRequestV4):
+        from .research_prompts import PREDICTION_V4
+
+        mode = (
+            "LIVE: enforce all evidence gates and use not_ready when they are unmet.\n"
+            if request.mode == "live"
+            else "DEMO ONLY: synthetic integration fixture; illustrative numbers are permitted. "
+            "Identify them as illustrative. This does not authorize Live forecasts.\n"
+        )
+        if isinstance(request, ResponsesHandoffRequestV5):
+            from .research_prompts import POLICY_COVERAGE_V1
+            if isinstance(request.evidence_coverage, EvidenceCoverageV2):
+                from .research_prompts import POLICY_COVERAGE_V2
+                return mode + PREDICTION_V4 + POLICY_COVERAGE_V2
+            return mode + PREDICTION_V4 + POLICY_COVERAGE_V1
+        return mode + PREDICTION_V4
+    if isinstance(request, ResponsesHandoffRequestV2):
+        mode_instruction = (
+            "This is a synthetic DEMO integration exercise, not a Live forecast. "
+            "Generate illustrative numerical drafts from the frozen fixture. "
+            "Do not abstain from required probabilistic outputs merely because the "
+            "fixture is synthetic. Identify it as illustrative in the rationale. "
+            if request.mode == "demo"
+            else "This is a LIVE research run. Use only verified frozen inputs. Never fill "
+            "missing evidence with synthetic or invented facts. If required Live inputs "
+            "cannot support a valid draft, leave it rejected rather than fabricate a forecast. "
+        )
+        return (
+            "# Focused research v2 Responses drafts\n\n"
+            + mode_instruction
+            + "Fill exactly every openai_responses assignment in dependency order. "
+            "Never draft deterministic CIO assignments. Preserve assignment IDs, target, "
+            "natural_horizon, decision_horizon, state_available and exact Wiki identity. "
+            "Use only frozen evidence IDs. Return JSON with only the drafts array. "
+            "For natural_view and strategy_forecast, probabilities and direction are required: "
+            "probabilities sum to 1, have a unique maximum, and direction is its class "
+            "(up, neutral or down). abstain must be false; impact, importance and risk_severity "
+            "must be null. For d1_impact, probabilities, direction and risk_severity must be null; "
+            "supply impact and importance. An unavailable state or abstention requires "
+            "impact=none and importance=none. Always pair impact=none with importance=none, "
+            "including available, non-abstaining no-impact states. Nonzero impact requires "
+            "importance=low/medium/high. Every non-abstaining D1 impact requires a "
+            "nonempty transmission_chain. "
+            "For risk_critique, direction, probabilities, impact and importance must be null; "
+            "risk_severity, counter_evidence and invalidation_conditions are required. "
+            "Python supplies provenance, validates the entire bundle and alone finalizes it.\n"
+        )
+    if isinstance(request, ResponsesHandoffRequestV1):
+        return (
+            "# Focused research v2 Responses drafts\n\n"
+            "Use only input.json. Fill every openai_responses assignment in dependency order. "
+            "Never draft deterministic CIO assignments or add assignments. Use only frozen "
+            "evidence IDs and exact Wiki identities. Risk Critic has no direction vote and "
+            "must declare risk_severity. Non-abstaining D1 impacts require transmission_chain. "
+            "Unavailable natural states require explicit no-impact abstention. "
+            "Return JSON with only the drafts array. Python supplies all provenance, "
+            "validates the complete bundle and alone finalizes it.\n"
+        )
     return f"""# Focused research v2 drafts
 
 Read only `input.json`. Copy `drafts.template.json` to `drafts.json` and fill every
@@ -2310,6 +2690,70 @@ def _validated_explicit_job_dir(settings: Settings, path: Path) -> Path:
 
 def _read_model(path: Path, model_type):
     return model_type.model_validate_json(_safe_read(path))
+
+
+def read_research_request(path: Path) -> CodexHandoffRequestV3 | ResponsesHandoffRequestV1:
+    value = _safe_read_json(path)
+    model_type = {
+        RESPONSES_HANDOFF_SCHEMA: ResponsesHandoffRequestV1,
+        RESPONSES_HANDOFF_SCHEMA_V2: ResponsesHandoffRequestV2,
+        RESPONSES_HANDOFF_SCHEMA_V3: ResponsesHandoffRequestV3,
+        RESPONSES_HANDOFF_SCHEMA_V4: ResponsesHandoffRequestV4,
+        "forecast-loop.responses-handoff/v5": ResponsesHandoffRequestV5,
+    }.get(value.get("schema_version"), CodexHandoffRequestV3)
+    return model_type.model_validate(value)
+
+
+def validate_responses_reasoning_task(
+    database: Database,
+    settings: Settings,
+    *,
+    job_dir: Path,
+) -> ResponsesReasoningTaskV1:
+    """Bind outcome-blind API input back to the persisted prediction and signals."""
+    job_dir = _validated_explicit_job_dir(settings, job_dir)
+    if (job_dir / "reasoning").is_symlink():
+        raise ResearchV2Error("reasoning directory must not be a symlink")
+    request = read_research_request(job_dir / "input.json")
+    if not isinstance(request, ResponsesHandoffRequestV1):
+        raise ResearchV2Error("Responses reasoning requires a Responses prediction")
+    value = _safe_read_json(job_dir / "reasoning" / "input.json")
+    if isinstance(request, ResponsesHandoffRequestV4) and (
+        value.get("schema_version") != "forecast-loop.responses-reasoning-task/v3"
+    ):
+        raise ResearchV2Error("Responses v4 blind review cannot downgrade its prompt contract")
+    if value.get("schema_version") == "forecast-loop.responses-reasoning-task/v3":
+        if not isinstance(request, ResponsesHandoffRequestV4):
+            raise ResearchV2Error("blind review v3 requires a Responses v4 prediction")
+        task = ResponsesReasoningTaskV3.model_validate(value)
+        if task.fallback_policy != request.fallback_policy or task.prediction_context != request:
+            raise ResearchV2Error("blind review changed its sealed fallback policy")
+    elif value.get("schema_version") == "forecast-loop.responses-reasoning-task/v2":
+        if not responses_fallback_enabled(request):
+            raise ResearchV2Error("blind fallback requires the prediction's sealed policy")
+        task = ResponsesReasoningTaskV2.model_validate(value)
+    else:
+        task = ResponsesReasoningTaskV1.model_validate(value)
+    if task.run_id != request.run_id or task.prediction_request_hash != request.request_hash:
+        raise ResearchV2Error("reasoning task does not bind the frozen prediction")
+    with database.session_factory() as session:
+        run = session.scalar(
+            select(ResearchRunV2)
+            .options(selectinload(ResearchRunV2.signals))
+            .where(ResearchRunV2.id == request.run_id)
+        )
+        if run is None or run.status != "completed" or run.request_hash != request.request_hash:
+            raise ResearchV2Error("Responses reasoning requires the sealed completed prediction")
+        expected = {
+            item.id: reasoning_review_input(
+                AgentSignalEnvelopeV2.model_validate(item.envelope)
+            ).model_dump(mode="json")
+            for item in run.signals
+            if item.envelope.get("generation_reason") != "external_shadow"
+        }
+    if {item.signal_id: item.model_dump(mode="json") for item in task.reviews} != expected:
+        raise ResearchV2Error("reasoning task changed the persisted outcome-blind inputs")
+    return task
 
 
 def _safe_read(path: Path) -> bytes:
@@ -2427,9 +2871,7 @@ def _record_finalized_research_trace(
         target_assignment = next(
             item for item in assignments.values() if item.target_id == target_id
         )
-        horizon = (
-            target_assignment.decision_horizon or target_assignment.natural_horizon
-        ).value
+        horizon = (target_assignment.decision_horizon or target_assignment.natural_horizon).value
         target_spans[target_id] = _trace_span_snapshot(
             recorder,
             trace_id=trace_id,
@@ -2459,14 +2901,12 @@ def _record_finalized_research_trace(
             completed_at=completed_at,
             agent_id=assignment.agent_id,
             agent_version=assignment.agent_version,
-            model_name=assignment.model_name,
+            model_name=signal.model_name,
             prompt_version=assignment.prompt_version,
             input_value={"assignment_id": assignment.assignment_id},
             output_value={"signal_hash": signal.content_hash},
             attributes={
-                "horizon": (
-                    assignment.decision_horizon or assignment.natural_horizon
-                ).value
+                "horizon": (assignment.decision_horizon or assignment.natural_horizon).value
             },
         )
         validator_span = _trace_span_snapshot(
@@ -2515,9 +2955,7 @@ def _record_finalized_research_trace(
             agent_version=assignment.agent_version,
             output_value={"signal_hash": signal.content_hash},
             attributes={
-                "horizon": (
-                    assignment.decision_horizon or assignment.natural_horizon
-                ).value
+                "horizon": (assignment.decision_horizon or assignment.natural_horizon).value
             },
         )
         _trace_link(
@@ -2598,6 +3036,7 @@ def _trace_reasoning_review_finalize(
     rows: list[ReasoningReviewV2],
     signal_artifacts: list[tuple[str, str]],
     occurred_at: datetime,
+    model_name: str = FROZEN_CODEX_MODEL,
 ) -> None:
     subject_id = f"reasoning:{run_id}"
     recorder = TraceRecorder(database, settings)
@@ -2619,7 +3058,7 @@ def _trace_reasoning_review_finalize(
         span_kind="validator",
         started_at=occurred_at,
         completed_at=occurred_at,
-        model_name=FROZEN_CODEX_MODEL,
+        model_name=model_name,
         prompt_version="reasoning-review-v2",
         input_value={"run_id": run_id, "review_count": len(rows)},
         output_value={"review_hashes": sorted(row.content_hash for row in rows)},
@@ -2860,9 +3299,7 @@ def _finish_artifact_trace(
                 else 0
             )
             telemetry_complete = (
-                trace is not None
-                and trace.telemetry_complete
-                and linked >= expected_artifacts
+                trace is not None and trace.telemetry_complete and linked >= expected_artifacts
             )
     except Exception:
         telemetry_complete = False
@@ -2947,16 +3384,14 @@ def _close_failed_finalize_trace(
 
     try:
         resolved = _validated_explicit_job_dir(settings, job_dir)
-        request = _read_model(resolved / "input.json", CodexHandoffRequestV3)
+        request = read_research_request(resolved / "input.json")
     except Exception:
         return
     recorder = TraceRecorder(database, settings)
     recorder.finish_trace(
         workflow_kind="prediction",
         subject_id=request.run_id,
-        trace_id=recorder.trace_id_for(
-            "prediction", request.run_id, running_only=True
-        ),
+        trace_id=recorder.trace_id_for("prediction", request.run_id, running_only=True),
         status="failed",
         error=error,
         attributes={"handoff_stage": "finalize"},
@@ -2968,7 +3403,7 @@ def validate_research_draft_bundle(
     *,
     job_dir: Path,
     raw_drafts: bytes,
-) -> tuple[CodexHandoffRequestV3, CodexDraftBundleV3]:
+) -> tuple[CodexHandoffRequestV3, CodexDraftBundleV3 | ResponsesDraftBundleV1]:
     """Validate an external v2 draft before an operator publishes it.
 
     The check is intentionally persistence-free so a dispatcher can validate a
@@ -2978,16 +3413,57 @@ def validate_research_draft_bundle(
     """
 
     job_dir = _validated_explicit_job_dir(settings, job_dir)
-    request = _read_model(job_dir / "input.json", CodexHandoffRequestV3)
-    bundle = CodexDraftBundleV3.model_validate_json(raw_drafts)
+    request = read_research_request(job_dir / "input.json")
+    if isinstance(request, ResponsesHandoffRequestV1) and request.run_id != job_dir.name:
+        raise ResearchV2Error("API request run ID does not match its handoff directory")
+    bundle_type = (
+        ResponsesDraftBundleV5
+        if isinstance(request, ResponsesHandoffRequestV5)
+        else ResponsesDraftBundleV4
+        if isinstance(request, ResponsesHandoffRequestV4)
+        else ResponsesDraftBundleV3
+        if isinstance(request, ResponsesHandoffRequestV3)
+        else ResponsesDraftBundleV2
+        if isinstance(request, ResponsesHandoffRequestV2)
+        else ResponsesDraftBundleV1
+        if isinstance(request, ResponsesHandoffRequestV1)
+        else CodexDraftBundleV3
+    )
+    bundle = bundle_type.model_validate_json(raw_drafts)
     if bundle.run_id != request.run_id or bundle.request_hash != request.request_hash:
         raise ResearchV2Error("draft bundle does not bind the frozen request")
+    if isinstance(request, ResponsesHandoffRequestV1) and bundle.generated_at < request.prepared_at:
+        raise ResearchV2Error("API draft predates its sealed preparation")
+    if isinstance(bundle, ResponsesDraftBundleV3) and bundle.generated_by["surface"] == "codex":
+        if not responses_fallback_enabled(request):
+            raise ResearchV2Error("Codex fallback was not enabled in the sealed request")
+        if datetime.fromisoformat(bundle.generated_by["primary_failed_at"]) < request.prepared_at:
+            raise ResearchV2Error("fallback primary failure predates its sealed preparation")
+    if isinstance(request, ResponsesHandoffRequestV5):
+        try:
+            validate_coverage(
+                request.evidence_coverage,
+                request.snapshot,
+                request.assignments,
+                None if bundle.status == "not_ready" else bundle.drafts,
+            )
+        except ValueError as exc:
+            raise ResearchV2Error(str(exc)) from exc
+    if isinstance(bundle, ResponsesDraftBundleV4) and bundle.status == "not_ready":
+        assignments = {
+            a.assignment_id: a for a in request.assignments if a.producer != "deterministic"
+        }
+        for issue in bundle.issues:
+            assignment = assignments.get(issue.assignment_id)
+            if assignment is None or not set(issue.evidence_item_ids).issubset(
+                assignment.allowed_evidence_item_ids
+            ):
+                raise ResearchV2Error("readiness issue references an unfrozen assignment/evidence")
+        return request, bundle
     # CodexDraftBundleV3 rejects duplicate assignment IDs before this
     # request-bound check rejects missing or unexpected assignments.
     draft_assignment_ids = {item.assignment_id for item in bundle.drafts}
-    codex_assignments = [
-        item for item in request.assignments if item.producer == "codex"
-    ]
+    codex_assignments = [item for item in request.assignments if item.producer != "deterministic"]
     expected = {item.assignment_id for item in codex_assignments}
     if draft_assignment_ids != expected:
         raise ResearchV2Error("draft bundle must contain exactly every assignment")
@@ -3004,7 +3480,12 @@ def validate_research_draft_bundle(
             or draft.decision_horizon != assignment.decision_horizon
         ):
             raise ResearchV2Error(f"draft identity mismatch for {assignment.assignment_id}")
-        if not set(draft.evidence_item_ids).issubset(evidence_ids):
+        allowed_ids = (
+            set(assignment.allowed_evidence_item_ids)
+            if isinstance(request, ResponsesHandoffRequestV4)
+            else evidence_ids
+        )
+        if not set(draft.evidence_item_ids).issubset(allowed_ids):
             raise ResearchV2Error("draft references evidence outside the frozen snapshot")
         if draft.state_available != assignment.state_available:
             raise ResearchV2Error("draft changed the host-derived natural-state availability")
